@@ -3655,6 +3655,180 @@ async function handleGenerateBroll(req, res, sessionId) {
 // Handle motion graphics rendering
 // NOTE: This is a placeholder that creates a simple text overlay video using FFmpeg
 // For proper Remotion rendering, you'd need to set up @remotion/renderer with bundling
+// Compose avatar video with green screen removal and background
+async function handleComposeAvatar(req, res, sessionId) {
+  const session = getSession(sessionId);
+  if (!session) {
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  try {
+    const body = await parseBody(req);
+    const {
+      backgroundAssetId,
+      avatarAssetId,
+      audioAssetId,
+      captions,
+      captionStyle = 'karaoke',
+      avatarPosition = 'bottom-left',
+      avatarScale = 0.28,
+      avatarShape = 'rectangle',
+      nameTag,
+      nameTagColor = '#FF6B00',
+      format = 'short',
+    } = body;
+
+    if (!backgroundAssetId || !avatarAssetId) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'backgroundAssetId and avatarAssetId are required' }));
+      return;
+    }
+
+    const jobId = randomUUID();
+    console.log(`\n[${jobId}] === COMPOSE AVATAR ===`);
+
+    // Validate assets exist
+    const backgroundAsset = session.assets.get(backgroundAssetId);
+    const avatarAsset = session.assets.get(avatarAssetId);
+
+    if (!backgroundAsset || !avatarAsset) {
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'One or more assets not found in session' }));
+      return;
+    }
+
+    let audioAsset = null;
+    if (audioAssetId) {
+      audioAsset = session.assets.get(audioAssetId);
+      if (!audioAsset) {
+        res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'Audio asset not found' }));
+        return;
+      }
+    }
+
+    console.log(`[${jobId}] Background: ${backgroundAsset.filename}`);
+    console.log(`[${jobId}] Avatar: ${avatarAsset.filename}`);
+    if (audioAsset) console.log(`[${jobId}] Audio: ${audioAsset.filename}`);
+
+    // Step 1: Remove green screen from avatar video (convert to transparent WebM)
+    const transparentAvatarPath = join(session.dir, `${jobId}-avatar-transparent.webm`);
+
+    console.log(`[${jobId}] Step 1/3: Removing green screen...`);
+    const chromakeyArgs = [
+      '-y',
+      '-i', avatarAsset.path,
+      '-vf', 'chromakey=0x00FF00:0.15:0.1',
+      '-c:v', 'libvpx-vp9',
+      '-auto-alt-ref', '0',
+      '-pix_fmt', 'yuva420p',
+      transparentAvatarPath
+    ];
+
+    await runFFmpeg(chromakeyArgs, jobId);
+    console.log(`[${jobId}] Green screen removed successfully`);
+
+    // Step 2: Get avatar duration using ffprobe
+    let totalDuration = avatarAsset.duration;
+    try {
+      const durationStr = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${avatarAsset.path}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      totalDuration = parseFloat(durationStr) || avatarAsset.duration;
+    } catch (e) {
+      console.warn(`[${jobId}] Could not get avatar duration, using metadata:`, e.message);
+    }
+
+    console.log(`[${jobId}] Total duration: ${totalDuration}s`);
+
+    // Step 3: Render composition with Remotion
+    const timestamp = Date.now();
+    const outputFilename = `compose-${timestamp}.mp4`;
+    const outputPath = join(session.rendersDir, outputFilename);
+
+    console.log(`[${jobId}] Step 2/3: Rendering composition with Remotion...`);
+
+    // Build props object for Remotion
+    const remotionProps = {
+      backgroundVideoUrl: `file://${backgroundAsset.path}`,
+      avatarVideoUrl: `file://${transparentAvatarPath}`,
+      audioUrl: audioAsset ? `file://${audioAsset.path}` : undefined,
+      captions: captions || undefined,
+      captionStyle,
+      avatarPosition,
+      avatarScale,
+      avatarShape,
+      nameTag,
+      nameTagColor,
+      totalDuration,
+      format,
+    };
+
+    const propsJson = JSON.stringify(remotionProps);
+
+    // Call Remotion CLI
+    const remotionCmd = `npx remotion render src/remotion/index.tsx AvatarCompose "${outputPath}" --props='${propsJson.replace(/'/g, "\\'")}'`;
+
+    console.log(`[${jobId}] Remotion command: ${remotionCmd.substring(0, 150)}...`);
+
+    execSync(remotionCmd, {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      encoding: 'utf-8',
+    });
+
+    console.log(`[${jobId}] Remotion render complete`);
+
+    // Step 4: Get output video metadata
+    let outputWidth = format === 'short' ? 1080 : 1920;
+    let outputHeight = format === 'short' ? 1920 : 1080;
+
+    try {
+      const widthStr = execSync(
+        `ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      const heightStr = execSync(
+        `ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      outputWidth = parseInt(widthStr) || outputWidth;
+      outputHeight = parseInt(heightStr) || outputHeight;
+    } catch (e) {
+      console.warn(`[${jobId}] Could not get output dimensions:`, e.message);
+    }
+
+    console.log(`[${jobId}] Step 3/3: Cleaning up temporary files...`);
+    // Clean up transparent avatar WebM
+    try {
+      unlinkSync(transparentAvatarPath);
+    } catch (e) {
+      console.warn(`[${jobId}] Could not delete temp file:`, e.message);
+    }
+
+    console.log(`[${jobId}] === COMPOSE COMPLETE ===\n`);
+
+    const downloadUrl = `/session/${sessionId}/renders/${outputFilename}`;
+
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({
+      success: true,
+      downloadUrl,
+      duration: totalDuration,
+      width: outputWidth,
+      height: outputHeight,
+    }));
+
+  } catch (error) {
+    console.error(`Avatar compose error:`, error);
+    res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
 async function handleRenderMotionGraphic(req, res, sessionId) {
   const session = getSession(sessionId);
   if (!session) {
@@ -7630,6 +7804,10 @@ const server = http.createServer(async (req, res) => {
     // B-roll image generation
     else if (req.method === 'POST' && action === 'generate-broll') {
       await handleGenerateBroll(req, res, sessionId);
+    }
+    // Compose avatar with green screen removal and background
+    else if (req.method === 'POST' && action === 'compose-avatar') {
+      await handleComposeAvatar(req, res, sessionId);
     }
     // Motion graphics rendering (placeholder - creates solid color video for now)
     else if (req.method === 'POST' && action === 'render-motion-graphic') {

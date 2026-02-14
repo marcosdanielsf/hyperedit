@@ -1,6 +1,7 @@
 import React from 'react';
 import { Composition } from 'remotion';
 import { DynamicAnimation } from './DynamicAnimation';
+import { AvatarCompose, AvatarComposeProps } from './AvatarCompose';
 
 // Props passed from the CLI via --props
 export interface DynamicAnimationProps {
@@ -190,6 +191,30 @@ export const RemotionRoot: React.FC = () => {
             durationInFrames: calculateDuration(props),
           };
         }}
+      />
+      <Composition
+        id="AvatarCompose"
+        component={AvatarCompose}
+        durationInFrames={300}
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          backgroundVideoUrl: '',
+          avatarVideoUrl: '',
+          avatarPosition: 'bottom-left',
+          avatarScale: 0.28,
+          avatarShape: 'rectangle',
+          showNameTag: false,
+          captionStyle: 'karaoke',
+          format: 'short',
+          backgroundMuted: true,
+        } as AvatarComposeProps}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: props.totalDuration || 300,
+          width: props.format === 'long' ? 1920 : 1080,
+          height: props.format === 'long' ? 1080 : 1920,
+        })}
       />
     </>
   );
