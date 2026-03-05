@@ -1,20 +1,38 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import VideoPreview, { VideoPreviewHandle } from '@/react-app/components/VideoPreview';
-import Timeline from '@/react-app/components/Timeline';
-import AssetLibrary from '@/react-app/components/AssetLibrary';
-import ClipPropertiesPanel from '@/react-app/components/ClipPropertiesPanel';
-import CaptionPropertiesPanel from '@/react-app/components/CaptionPropertiesPanel';
-import AIPromptPanel from '@/react-app/components/AIPromptPanel';
-import PicassoPanel from '@/react-app/components/PicassoPanel';
-import DiCaprioPanel from '@/react-app/components/DiCaprioPanel';
-import GifSearchPanel from '@/react-app/components/GifSearchPanel';
-import ResizablePanel from '@/react-app/components/ResizablePanel';
-import ResizableVerticalPanel from '@/react-app/components/ResizableVerticalPanel';
-import TimelineTabs from '@/react-app/components/TimelineTabs';
-import { useProject, Asset, TimelineClip, CaptionStyle } from '@/react-app/hooks/useProject';
-import { useVideoSession } from '@/react-app/hooks/useVideoSession';
-import { Sparkles, ListOrdered, Copy, Check, X, Download, Play, Palette, Film } from 'lucide-react';
-import type { TemplateId } from '@/remotion/templates';
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router";
+import VideoPreview, {
+  VideoPreviewHandle,
+} from "@/react-app/components/VideoPreview";
+import Timeline from "@/react-app/components/Timeline";
+import AssetLibrary from "@/react-app/components/AssetLibrary";
+import ClipPropertiesPanel from "@/react-app/components/ClipPropertiesPanel";
+import CaptionPropertiesPanel from "@/react-app/components/CaptionPropertiesPanel";
+import AIPromptPanel from "@/react-app/components/AIPromptPanel";
+import PicassoPanel from "@/react-app/components/PicassoPanel";
+import DiCaprioPanel from "@/react-app/components/DiCaprioPanel";
+import GifSearchPanel from "@/react-app/components/GifSearchPanel";
+import ResizablePanel from "@/react-app/components/ResizablePanel";
+import ResizableVerticalPanel from "@/react-app/components/ResizableVerticalPanel";
+import TimelineTabs from "@/react-app/components/TimelineTabs";
+import {
+  useProject,
+  Asset,
+  TimelineClip,
+  CaptionStyle,
+} from "@/react-app/hooks/useProject";
+import { useVideoSession } from "@/react-app/hooks/useVideoSession";
+import {
+  Sparkles,
+  ListOrdered,
+  Copy,
+  Check,
+  X,
+  Download,
+  Play,
+  Palette,
+  Film,
+} from "lucide-react";
+import type { TemplateId } from "@/remotion/templates";
 
 interface ChapterData {
   chapters: Array<{ start: number; title: string }>;
@@ -23,6 +41,8 @@ interface ChapterData {
 }
 
 export default function Home() {
+  const [searchParams] = useSearchParams();
+  const [autoLoadDone, setAutoLoadDone] = useState(false);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -31,9 +51,11 @@ export default function Home() {
   const [showChapters, setShowChapters] = useState(false);
   const [copied, setCopied] = useState(false);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
-  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [autoSnap, setAutoSnap] = useState(true); // Ripple delete mode - shift clips when deleting
-  const [activeAgent, setActiveAgent] = useState<'director' | 'picasso' | 'dicaprio'>('director');
+  const [activeAgent, setActiveAgent] = useState<
+    "director" | "picasso" | "dicaprio"
+  >("director");
   const [showGifSearch, setShowGifSearch] = useState(false);
 
   const videoPreviewRef = useRef<VideoPreviewHandle>(null);
@@ -80,10 +102,10 @@ export default function Home() {
 
   // Compute the active clips based on which tab is selected
   const activeClips = useMemo(() => {
-    if (activeTabId === 'main') {
+    if (activeTabId === "main") {
       return clips;
     }
-    const activeTab = timelineTabs.find(tab => tab.id === activeTabId);
+    const activeTab = timelineTabs.find((tab) => tab.id === activeTabId);
     return activeTab?.clips || [];
   }, [activeTabId, clips, timelineTabs]);
 
@@ -103,27 +125,84 @@ export default function Home() {
   // Load project from server when session becomes available
   useEffect(() => {
     if (session) {
-      console.log('Session available, loading project...');
+      console.log("Session available, loading project...");
       loadProject();
     }
   }, [session, loadProject]);
+
+  // Auto-load video from ?videoUrl= query param (used by AI Factory integration)
+  useEffect(() => {
+    if (autoLoadDone) return;
+    const videoUrl = searchParams.get("videoUrl");
+    if (!videoUrl) return;
+
+    const loadFromUrl = async () => {
+      try {
+        const serverOk = await checkServer();
+        if (!serverOk) {
+          console.error("[AutoLoad] FFmpeg server not available");
+          return;
+        }
+
+        console.log("[AutoLoad] Fetching video from:", videoUrl);
+        const response = await fetch(videoUrl);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
+        const blob = await response.blob();
+        const filename =
+          videoUrl.split("/").pop()?.split("?")[0] || "video.mp4";
+        const file = new File([blob], filename, {
+          type: blob.type || "video/mp4",
+        });
+
+        const asset = await uploadAsset(file);
+        if (asset) {
+          addClip(asset.id, "V1", 0, asset.duration);
+          if (asset.width && asset.height) {
+            setAspectRatio(asset.height > asset.width ? "9:16" : "16:9");
+          }
+          await saveProject();
+          console.log(
+            "[AutoLoad] Video loaded and added to timeline:",
+            asset.filename,
+          );
+        }
+      } catch (err) {
+        console.error("[AutoLoad] Failed to load video:", err);
+      } finally {
+        setAutoLoadDone(true);
+      }
+    };
+
+    loadFromUrl();
+  }, [
+    searchParams,
+    autoLoadDone,
+    checkServer,
+    uploadAsset,
+    addClip,
+    saveProject,
+  ]);
 
   // Get all clips at the current playhead position as layers
   const getPreviewLayers = useCallback(() => {
     // If a specific asset is selected for preview (from library), show only that
     if (previewAssetId) {
-      const asset = assets.find(a => a.id === previewAssetId);
+      const asset = assets.find((a) => a.id === previewAssetId);
       // Use asset.streamUrl which has cache-busting timestamp
-      const url = asset?.streamUrl || (asset ? getAssetStreamUrl(previewAssetId) : null);
+      const url =
+        asset?.streamUrl || (asset ? getAssetStreamUrl(previewAssetId) : null);
       if (asset && url) {
-        return [{
-          id: 'preview-' + previewAssetId,
-          url,
-          type: asset.type,
-          trackId: 'V1',
-          clipTime: 0,
-          clipStart: 0,
-        }];
+        return [
+          {
+            id: "preview-" + previewAssetId,
+            url,
+            type: asset.type,
+            trackId: "V1",
+            clipTime: 0,
+            clipStart: 0,
+          },
+        ];
       }
       return [];
     }
@@ -132,32 +211,34 @@ export default function Home() {
     const layers: Array<{
       id: string;
       url: string;
-      type: 'video' | 'image' | 'audio' | 'caption';
+      type: "video" | "image" | "audio" | "caption";
       trackId: string;
       clipTime: number;
       clipStart: number;
-      transform?: TimelineClip['transform'];
+      transform?: TimelineClip["transform"];
       captionWords?: Array<{ text: string; start: number; end: number }>;
       captionStyle?: CaptionStyle;
     }> = [];
 
     // Check video tracks (V1, V2, V3...)
-    const videoTracks = ['V1', 'V2', 'V3'];
+    const videoTracks = ["V1", "V2", "V3"];
 
     for (const trackId of videoTracks) {
-      const clipsOnTrack = activeClips.filter(c =>
-        c.trackId === trackId &&
-        currentTime >= c.start &&
-        currentTime < c.start + c.duration
+      const clipsOnTrack = activeClips.filter(
+        (c) =>
+          c.trackId === trackId &&
+          currentTime >= c.start &&
+          currentTime < c.start + c.duration,
       );
 
       for (const clip of clipsOnTrack) {
-        const asset = assets.find(a => a.id === clip.assetId);
+        const asset = assets.find((a) => a.id === clip.assetId);
         // Use asset.streamUrl which has cache-busting timestamp from refreshAssets
-        const url = asset?.streamUrl || (asset ? getAssetStreamUrl(asset.id) : null);
+        const url =
+          asset?.streamUrl || (asset ? getAssetStreamUrl(asset.id) : null);
         if (asset && url) {
           // Calculate the time within the clip (accounting for in-point)
-          const clipTime = (currentTime - clip.start) + (clip.inPoint || 0);
+          const clipTime = currentTime - clip.start + (clip.inPoint || 0);
           layers.push({
             id: clip.id,
             url,
@@ -172,24 +253,26 @@ export default function Home() {
     }
 
     // Check audio tracks (A1, A2)
-    const audioTracks = ['A1', 'A2'];
+    const audioTracks = ["A1", "A2"];
 
     for (const trackId of audioTracks) {
-      const clipsOnTrack = activeClips.filter(c =>
-        c.trackId === trackId &&
-        currentTime >= c.start &&
-        currentTime < c.start + c.duration
+      const clipsOnTrack = activeClips.filter(
+        (c) =>
+          c.trackId === trackId &&
+          currentTime >= c.start &&
+          currentTime < c.start + c.duration,
       );
 
       for (const clip of clipsOnTrack) {
-        const asset = assets.find(a => a.id === clip.assetId);
-        const url = asset?.streamUrl || (asset ? getAssetStreamUrl(asset.id) : null);
-        if (asset && url && asset.type === 'audio') {
-          const clipTime = (currentTime - clip.start) + (clip.inPoint || 0);
+        const asset = assets.find((a) => a.id === clip.assetId);
+        const url =
+          asset?.streamUrl || (asset ? getAssetStreamUrl(asset.id) : null);
+        if (asset && url && asset.type === "audio") {
+          const clipTime = currentTime - clip.start + (clip.inPoint || 0);
           layers.push({
             id: clip.id,
             url,
-            type: 'audio',
+            type: "audio",
             trackId: clip.trackId,
             clipTime,
             clipStart: clip.start,
@@ -199,10 +282,11 @@ export default function Home() {
     }
 
     // Check caption track (T1)
-    const captionClips = activeClips.filter(c =>
-      c.trackId === 'T1' &&
-      currentTime >= c.start &&
-      currentTime < c.start + c.duration
+    const captionClips = activeClips.filter(
+      (c) =>
+        c.trackId === "T1" &&
+        currentTime >= c.start &&
+        currentTime < c.start + c.duration,
     );
 
     for (const clip of captionClips) {
@@ -211,8 +295,8 @@ export default function Home() {
         // Words have relative timestamps (0 to chunk duration), so pass clip-relative time
         layers.push({
           id: clip.id,
-          url: '',
-          type: 'caption',
+          url: "",
+          type: "caption",
           trackId: clip.trackId,
           clipTime: currentTime - clip.start, // Convert to clip-relative time
           clipStart: clip.start,
@@ -223,7 +307,14 @@ export default function Home() {
     }
 
     return layers;
-  }, [previewAssetId, assets, activeClips, currentTime, getAssetStreamUrl, getCaptionData]);
+  }, [
+    previewAssetId,
+    assets,
+    activeClips,
+    currentTime,
+    getAssetStreamUrl,
+    getCaptionData,
+  ]);
 
   const previewLayers = getPreviewLayers();
   const hasPreviewContent = previewLayers.length > 0;
@@ -231,7 +322,7 @@ export default function Home() {
   // Get duration based on active tab's clips
   const duration = useMemo(() => {
     if (activeClips.length === 0) return 0;
-    return Math.max(...activeClips.map(c => c.start + c.duration));
+    return Math.max(...activeClips.map((c) => c.start + c.duration));
   }, [activeClips]);
 
   // Timeline playback effect
@@ -243,7 +334,7 @@ export default function Home() {
         const delta = (now - lastTimeRef.current) / 1000; // Convert to seconds
         lastTimeRef.current = now;
 
-        setCurrentTime(prev => {
+        setCurrentTime((prev) => {
           const newTime = prev + delta;
           if (newTime >= duration) {
             setIsPlaying(false);
@@ -271,7 +362,7 @@ export default function Home() {
       // If at end, restart from beginning
       setCurrentTime(0);
     }
-    setIsPlaying(prev => !prev);
+    setIsPlaying((prev) => !prev);
   }, [currentTime, duration]);
 
   // Handle stop (go to beginning)
@@ -286,25 +377,36 @@ export default function Home() {
     // Don't seek the video directly - let the clipTime prop handle it
   }, []);
 
-
   // Handle asset upload
-  const handleAssetUpload = useCallback(async (files: FileList) => {
-    for (const file of Array.from(files)) {
-      try {
-        const newAsset = await uploadAsset(file);
+  const handleAssetUpload = useCallback(
+    async (files: FileList) => {
+      for (const file of Array.from(files)) {
+        try {
+          const newAsset = await uploadAsset(file);
 
-        // Auto-detect aspect ratio from video dimensions
-        if (newAsset && newAsset.type === 'video' && newAsset.width && newAsset.height) {
-          const isPortrait = newAsset.height > newAsset.width;
-          setAspectRatio(isPortrait ? '9:16' : '16:9');
-          console.log(`Auto-detected aspect ratio: ${isPortrait ? '9:16 (portrait)' : '16:9 (landscape)'} from ${newAsset.width}x${newAsset.height}`);
+          // Auto-detect aspect ratio from video dimensions
+          if (
+            newAsset &&
+            newAsset.type === "video" &&
+            newAsset.width &&
+            newAsset.height
+          ) {
+            const isPortrait = newAsset.height > newAsset.width;
+            setAspectRatio(isPortrait ? "9:16" : "16:9");
+            console.log(
+              `Auto-detected aspect ratio: ${isPortrait ? "9:16 (portrait)" : "16:9 (landscape)"} from ${newAsset.width}x${newAsset.height}`,
+            );
+          }
+        } catch (error) {
+          console.error("Upload failed:", error);
+          alert(
+            `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
         }
-      } catch (error) {
-        console.error('Upload failed:', error);
-        alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
-    }
-  }, [uploadAsset]);
+    },
+    [uploadAsset],
+  );
 
   // Handle GIF added from search panel
   const handleGifAdded = useCallback(async () => {
@@ -328,130 +430,155 @@ export default function Home() {
   }, []);
 
   // Handle dropping asset onto timeline
-  const handleDropAsset = useCallback((asset: Asset, trackId: string, time: number) => {
-    // Determine which track to use based on asset type
-    let targetTrackId = trackId;
+  const handleDropAsset = useCallback(
+    (asset: Asset, trackId: string, time: number) => {
+      // Determine which track to use based on asset type
+      let targetTrackId = trackId;
 
-    // If dropping audio on video track, redirect to audio track
-    if (asset.type === 'audio' && trackId.startsWith('V')) {
-      targetTrackId = 'A1';
-    }
-    // If dropping video/image on audio track, redirect to video track
-    if (asset.type !== 'audio' && trackId.startsWith('A')) {
-      targetTrackId = 'V1';
-    }
-
-    // Images need a default duration (5 seconds) since they don't have inherent duration
-    const clipDuration = asset.type === 'image' ? 5 : asset.duration;
-
-    // Check if we're on an edit tab (not main)
-    if (activeTabId !== 'main') {
-      // Add clip to the edit tab's clips array
-      const activeTab = timelineTabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        const newClip: TimelineClip = {
-          id: crypto.randomUUID(),
-          assetId: asset.id,
-          trackId: targetTrackId,
-          start: time,
-          duration: clipDuration || 5,
-          inPoint: 0,
-          outPoint: clipDuration || 5,
-        };
-        updateTabClips(activeTabId, [...activeTab.clips, newClip]);
-        console.log('Added clip to edit tab:', activeTabId, newClip);
+      // If dropping audio on video track, redirect to audio track
+      if (asset.type === "audio" && trackId.startsWith("V")) {
+        targetTrackId = "A1";
       }
-    } else {
-      // Add clip to main timeline
-      addClip(asset.id, targetTrackId, time, clipDuration);
-    }
-    saveProject();
-  }, [addClip, saveProject, activeTabId, timelineTabs, updateTabClips]);
+      // If dropping video/image on audio track, redirect to video track
+      if (asset.type !== "audio" && trackId.startsWith("A")) {
+        targetTrackId = "V1";
+      }
+
+      // Images need a default duration (5 seconds) since they don't have inherent duration
+      const clipDuration = asset.type === "image" ? 5 : asset.duration;
+
+      // Check if we're on an edit tab (not main)
+      if (activeTabId !== "main") {
+        // Add clip to the edit tab's clips array
+        const activeTab = timelineTabs.find((tab) => tab.id === activeTabId);
+        if (activeTab) {
+          const newClip: TimelineClip = {
+            id: crypto.randomUUID(),
+            assetId: asset.id,
+            trackId: targetTrackId,
+            start: time,
+            duration: clipDuration || 5,
+            inPoint: 0,
+            outPoint: clipDuration || 5,
+          };
+          updateTabClips(activeTabId, [...activeTab.clips, newClip]);
+          console.log("Added clip to edit tab:", activeTabId, newClip);
+        }
+      } else {
+        // Add clip to main timeline
+        addClip(asset.id, targetTrackId, time, clipDuration);
+      }
+      saveProject();
+    },
+    [addClip, saveProject, activeTabId, timelineTabs, updateTabClips],
+  );
 
   // Handle moving clip
-  const handleMoveClip = useCallback((clipId: string, newStart: number, newTrackId?: string) => {
-    // Check if we're on an edit tab
-    if (activeTabId !== 'main') {
-      const activeTab = timelineTabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        const updatedClips = activeTab.clips.map(clip => {
-          if (clip.id === clipId) {
-            return {
-              ...clip,
-              start: newStart,
-              trackId: newTrackId || clip.trackId,
-            };
-          }
-          return clip;
-        });
-        updateTabClips(activeTabId, updatedClips);
+  const handleMoveClip = useCallback(
+    (clipId: string, newStart: number, newTrackId?: string) => {
+      // Check if we're on an edit tab
+      if (activeTabId !== "main") {
+        const activeTab = timelineTabs.find((tab) => tab.id === activeTabId);
+        if (activeTab) {
+          const updatedClips = activeTab.clips.map((clip) => {
+            if (clip.id === clipId) {
+              return {
+                ...clip,
+                start: newStart,
+                trackId: newTrackId || clip.trackId,
+              };
+            }
+            return clip;
+          });
+          updateTabClips(activeTabId, updatedClips);
+        }
+      } else {
+        moveClip(clipId, newStart, newTrackId);
       }
-    } else {
-      moveClip(clipId, newStart, newTrackId);
-    }
-  }, [moveClip, activeTabId, timelineTabs, updateTabClips]);
+    },
+    [moveClip, activeTabId, timelineTabs, updateTabClips],
+  );
 
   // Handle resizing clip
-  const handleResizeClip = useCallback((clipId: string, newInPoint: number, newOutPoint: number, newStart?: number) => {
-    const newDuration = newOutPoint - newInPoint;
+  const handleResizeClip = useCallback(
+    (
+      clipId: string,
+      newInPoint: number,
+      newOutPoint: number,
+      newStart?: number,
+    ) => {
+      const newDuration = newOutPoint - newInPoint;
 
-    // Check if we're on an edit tab
-    if (activeTabId !== 'main') {
-      const activeTab = timelineTabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        const clip = activeTab.clips.find(c => c.id === clipId);
+      // Check if we're on an edit tab
+      if (activeTabId !== "main") {
+        const activeTab = timelineTabs.find((tab) => tab.id === activeTabId);
+        if (activeTab) {
+          const clip = activeTab.clips.find((c) => c.id === clipId);
+          if (!clip) return;
+
+          const updatedClips = activeTab.clips.map((c) => {
+            if (c.id === clipId) {
+              return {
+                ...c,
+                inPoint: newInPoint,
+                outPoint: newOutPoint,
+                duration: newDuration,
+                start: newStart ?? c.start,
+              };
+            }
+            return c;
+          });
+          updateTabClips(activeTabId, updatedClips);
+        }
+      } else {
+        const clip = clips.find((c) => c.id === clipId);
         if (!clip) return;
 
-        const updatedClips = activeTab.clips.map(c => {
-          if (c.id === clipId) {
-            return {
-              ...c,
-              inPoint: newInPoint,
-              outPoint: newOutPoint,
-              duration: newDuration,
-              start: newStart ?? c.start,
-            };
-          }
-          return c;
+        updateClip(clipId, {
+          inPoint: newInPoint,
+          outPoint: newOutPoint,
+          duration: newDuration,
+          start: newStart ?? clip.start,
         });
-        updateTabClips(activeTabId, updatedClips);
       }
-    } else {
-      const clip = clips.find(c => c.id === clipId);
-      if (!clip) return;
-
-      updateClip(clipId, {
-        inPoint: newInPoint,
-        outPoint: newOutPoint,
-        duration: newDuration,
-        start: newStart ?? clip.start,
-      });
-    }
-  }, [clips, updateClip, activeTabId, timelineTabs, updateTabClips]);
+    },
+    [clips, updateClip, activeTabId, timelineTabs, updateTabClips],
+  );
 
   // Handle deleting clip from timeline (with autoSnap/ripple support)
-  const handleDeleteClip = useCallback((clipId: string) => {
-    // Check if we're on an edit tab
-    if (activeTabId !== 'main') {
-      const activeTab = timelineTabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        const updatedClips = activeTab.clips.filter(c => c.id !== clipId);
-        updateTabClips(activeTabId, updatedClips);
+  const handleDeleteClip = useCallback(
+    (clipId: string) => {
+      // Check if we're on an edit tab
+      if (activeTabId !== "main") {
+        const activeTab = timelineTabs.find((tab) => tab.id === activeTabId);
+        if (activeTab) {
+          const updatedClips = activeTab.clips.filter((c) => c.id !== clipId);
+          updateTabClips(activeTabId, updatedClips);
+        }
+      } else {
+        deleteClip(clipId, autoSnap);
       }
-    } else {
-      deleteClip(clipId, autoSnap);
-    }
 
-    if (selectedClipId === clipId) {
-      setSelectedClipId(null);
-    }
-  }, [deleteClip, selectedClipId, autoSnap, activeTabId, timelineTabs, updateTabClips]);
+      if (selectedClipId === clipId) {
+        setSelectedClipId(null);
+      }
+    },
+    [
+      deleteClip,
+      selectedClipId,
+      autoSnap,
+      activeTabId,
+      timelineTabs,
+      updateTabClips,
+    ],
+  );
 
   // Handle cutting clips at the playhead position
   const handleCutAtPlayhead = useCallback(() => {
     // Find all clips that are under the playhead
-    const clipsAtPlayhead = clips.filter(clip =>
-      currentTime > clip.start && currentTime < clip.start + clip.duration
+    const clipsAtPlayhead = clips.filter(
+      (clip) =>
+        currentTime > clip.start && currentTime < clip.start + clip.duration,
     );
 
     if (clipsAtPlayhead.length === 0) {
@@ -470,18 +597,18 @@ export default function Home() {
   const handleAddText = useCallback(() => {
     // Create a text clip on T1 track at current playhead
     // TODO: Open text editor modal or add default text
-    console.log('Add text overlay at', currentTime);
+    console.log("Add text overlay at", currentTime);
   }, [currentTime]);
 
   // Handle toggling aspect ratio
   const handleToggleAspectRatio = useCallback(() => {
-    setAspectRatio(prev => {
-      const newRatio = prev === '16:9' ? '9:16' : '16:9';
+    setAspectRatio((prev) => {
+      const newRatio = prev === "16:9" ? "9:16" : "16:9";
       // Update project settings with new dimensions
-      if (newRatio === '9:16') {
-        setSettings(s => ({ ...s, width: 1080, height: 1920 }));
+      if (newRatio === "9:16") {
+        setSettings((s) => ({ ...s, width: 1080, height: 1920 }));
       } else {
-        setSettings(s => ({ ...s, width: 1920, height: 1080 }));
+        setSettings((s) => ({ ...s, width: 1920, height: 1080 }));
       }
       return newRatio;
     });
@@ -495,38 +622,50 @@ export default function Home() {
   }, []);
 
   // Handle updating clip transform (scale, rotation, crop, etc.)
-  const handleUpdateClipTransform = useCallback((clipId: string, transform: TimelineClip['transform']) => {
-    updateClip(clipId, { transform });
-    saveProject();
-  }, [updateClip, saveProject]);
-
-  // Get selected clip and its asset
-  const selectedClip = useMemo(() =>
-    clips.find(c => c.id === selectedClipId) || null,
-    [clips, selectedClipId]
+  const handleUpdateClipTransform = useCallback(
+    (clipId: string, transform: TimelineClip["transform"]) => {
+      updateClip(clipId, { transform });
+      saveProject();
+    },
+    [updateClip, saveProject],
   );
 
-  const selectedClipAsset = useMemo(() =>
-    selectedClip ? assets.find(a => a.id === selectedClip.assetId) || null : null,
-    [selectedClip, assets]
+  // Get selected clip and its asset
+  const selectedClip = useMemo(
+    () => clips.find((c) => c.id === selectedClipId) || null,
+    [clips, selectedClipId],
+  );
+
+  const selectedClipAsset = useMemo(
+    () =>
+      selectedClip
+        ? assets.find((a) => a.id === selectedClip.assetId) || null
+        : null,
+    [selectedClip, assets],
   );
 
   // Check if selected clip is a caption
-  const selectedCaptionData = useMemo(() =>
-    selectedClip && selectedClip.trackId === 'T1' ? getCaptionData(selectedClip.id) : null,
-    [selectedClip, getCaptionData]
+  const selectedCaptionData = useMemo(
+    () =>
+      selectedClip && selectedClip.trackId === "T1"
+        ? getCaptionData(selectedClip.id)
+        : null,
+    [selectedClip, getCaptionData],
   );
 
   // Handle dragging overlay in video preview
-  const handleLayerMove = useCallback((layerId: string, x: number, y: number) => {
-    const clip = clips.find(c => c.id === layerId);
-    if (!clip) return;
+  const handleLayerMove = useCallback(
+    (layerId: string, x: number, y: number) => {
+      const clip = clips.find((c) => c.id === layerId);
+      if (!clip) return;
 
-    const currentTransform = clip.transform || {};
-    updateClip(layerId, {
-      transform: { ...currentTransform, x, y }
-    });
-  }, [clips, updateClip]);
+      const currentTransform = clip.transform || {};
+      updateClip(layerId, {
+        transform: { ...currentTransform, x, y },
+      });
+    },
+    [clips, updateClip],
+  );
 
   // Handle selecting layer from video preview
   const handleLayerSelect = useCallback((layerId: string) => {
@@ -535,71 +674,85 @@ export default function Home() {
   }, []);
 
   // Handle AI edit (using FFmpeg on video assets)
-  const handleApplyEdit = useCallback(async (command: string) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first');
-    }
+  const handleApplyEdit = useCallback(
+    async (command: string) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first");
+      }
 
-    // Find the video asset to edit - prioritize selected clip's asset, otherwise first video
-    let targetAssetId: string | null = null;
+      // Find the video asset to edit - prioritize selected clip's asset, otherwise first video
+      let targetAssetId: string | null = null;
 
-    if (selectedClipId) {
-      const selectedClip = clips.find(c => c.id === selectedClipId);
-      if (selectedClip) {
-        const asset = assets.find(a => a.id === selectedClip.assetId);
-        if (asset?.type === 'video') {
-          targetAssetId = asset.id;
+      if (selectedClipId) {
+        const selectedClip = clips.find((c) => c.id === selectedClipId);
+        if (selectedClip) {
+          const asset = assets.find((a) => a.id === selectedClip.assetId);
+          if (asset?.type === "video") {
+            targetAssetId = asset.id;
+          }
         }
       }
-    }
 
-    if (!targetAssetId) {
-      const videoAsset = assets.find(a => a.type === 'video');
-      if (!videoAsset) {
-        throw new Error('Please upload a video first');
+      if (!targetAssetId) {
+        const videoAsset = assets.find((a) => a.type === "video");
+        if (!videoAsset) {
+          throw new Error("Please upload a video first");
+        }
+        targetAssetId = videoAsset.id;
       }
-      targetAssetId = videoAsset.id;
-    }
 
-    console.log('Applying FFmpeg edit to asset:', targetAssetId);
-    console.log('Command:', command);
+      console.log("Applying FFmpeg edit to asset:", targetAssetId);
+      console.log("Command:", command);
 
-    // Call the server to process the video with FFmpeg
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/process-asset`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assetId: targetAssetId,
-        command,
-      }),
-    });
+      // Call the server to process the video with FFmpeg
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/process-asset`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assetId: targetAssetId,
+            command,
+          }),
+        },
+      );
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to apply edit');
-    }
-
-    const result = await response.json();
-    console.log('Edit applied, new asset:', result.assetId);
-
-    // Refresh assets to get the new processed asset
-    await refreshAssets();
-
-    // Optionally replace clips using the old asset with the new one
-    if (result.assetId && result.assetId !== targetAssetId) {
-      // Find clips using the old asset and update them to use the new one
-      const clipsToUpdate = clips.filter(c => c.assetId === targetAssetId);
-      for (const clip of clipsToUpdate) {
-        updateClip(clip.id, { assetId: result.assetId });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to apply edit");
       }
-      await saveProject();
-    }
-  }, [session, assets, clips, selectedClipId, refreshAssets, updateClip, saveProject]);
+
+      const result = await response.json();
+      console.log("Edit applied, new asset:", result.assetId);
+
+      // Refresh assets to get the new processed asset
+      await refreshAssets();
+
+      // Optionally replace clips using the old asset with the new one
+      if (result.assetId && result.assetId !== targetAssetId) {
+        // Find clips using the old asset and update them to use the new one
+        const clipsToUpdate = clips.filter((c) => c.assetId === targetAssetId);
+        for (const clip of clipsToUpdate) {
+          updateClip(clip.id, { assetId: result.assetId });
+        }
+        await saveProject();
+      }
+    },
+    [
+      session,
+      assets,
+      clips,
+      selectedClipId,
+      refreshAssets,
+      updateClip,
+      saveProject,
+    ],
+  );
 
   // Handle chapter generation
   const handleGenerateChapters = useCallback(async () => {
     if (!legacySession) {
-      alert('Please upload a video using the AI Edit panel first');
+      alert("Please upload a video using the AI Edit panel first");
       return;
     }
 
@@ -608,8 +761,10 @@ export default function Home() {
       setChapterData(result);
       setShowChapters(true);
     } catch (error) {
-      console.error('Chapter generation failed:', error);
-      alert(`Failed to generate chapters: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Chapter generation failed:", error);
+      alert(
+        `Failed to generate chapters: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }, [legacySession, legacyGenerateChapters]);
 
@@ -629,32 +784,38 @@ export default function Home() {
     youtubeFormat: string;
   }> => {
     if (!session) {
-      throw new Error('No session available');
+      throw new Error("No session available");
     }
 
     // Check if we have a video asset on V1
-    const v1Clip = clips.find(c => c.trackId === 'V1');
+    const v1Clip = clips.find((c) => c.trackId === "V1");
     if (!v1Clip) {
-      throw new Error('No video clip on V1 track. Please add a video to the timeline first.');
+      throw new Error(
+        "No video clip on V1 track. Please add a video to the timeline first.",
+      );
     }
 
-    console.log('Generating chapters and making cuts...');
+    console.log("Generating chapters and making cuts...");
 
     // Generate chapters using the session API
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/chapters`, {
-      method: 'POST',
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/chapters`,
+      {
+        method: "POST",
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to generate chapters');
+      throw new Error(error.error || "Failed to generate chapters");
     }
 
     const result = await response.json();
-    const chapters: Array<{ start: number; title: string }> = result.chapters || [];
+    const chapters: Array<{ start: number; title: string }> =
+      result.chapters || [];
 
     if (chapters.length === 0) {
-      throw new Error('No chapters were detected in the video');
+      throw new Error("No chapters were detected in the video");
     }
 
     console.log(`Generated ${chapters.length} chapters:`, chapters);
@@ -664,14 +825,16 @@ export default function Home() {
 
     // Get chapter timestamps to cut at (skip first chapter at 0:00)
     const cutTimestamps = chapters
-      .filter(ch => ch.start >= 0.5)
-      .map(ch => ch.start)
+      .filter((ch) => ch.start >= 0.5)
+      .map((ch) => ch.start)
       .sort((a, b) => a - b);
 
-    console.log('Cut timestamps:', cutTimestamps);
+    console.log("Cut timestamps:", cutTimestamps);
 
     // Get current project state from server
-    const projectResponse = await fetch(`http://localhost:3333/session/${session.sessionId}/project`);
+    const projectResponse = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/project`,
+    );
     const projectData = await projectResponse.json();
     let currentClips: TimelineClip[] = projectData.clips || [];
 
@@ -681,10 +844,11 @@ export default function Home() {
 
     for (const timestamp of cutTimestamps) {
       // Find clip that spans this timestamp on V1
-      const clipIndex = currentClips.findIndex((clip: TimelineClip) =>
-        clip.trackId === 'V1' &&
-        timestamp > clip.start &&
-        timestamp < clip.start + clip.duration
+      const clipIndex = currentClips.findIndex(
+        (clip: TimelineClip) =>
+          clip.trackId === "V1" &&
+          timestamp > clip.start &&
+          timestamp < clip.start + clip.duration,
       );
 
       if (clipIndex === -1) continue;
@@ -720,16 +884,21 @@ export default function Home() {
       currentClips.push(secondClip);
       cutsApplied++;
 
-      console.log(`Cut at ${timestamp}s: clip ${clip.id} -> new clip ${secondClip.id}`);
+      console.log(
+        `Cut at ${timestamp}s: clip ${clip.id} -> new clip ${secondClip.id}`,
+      );
     }
 
     // Save the modified clips directly to server
     if (cutsApplied > 0) {
-      await fetch(`http://localhost:3333/session/${session.sessionId}/project`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...projectData, clips: currentClips }),
-      });
+      await fetch(
+        `http://localhost:3333/session/${session.sessionId}/project`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...projectData, clips: currentClips }),
+        },
+      );
 
       // Reload to sync local state
       await loadProject();
@@ -738,40 +907,43 @@ export default function Home() {
     return {
       chapters,
       cutsApplied,
-      youtubeFormat: result.youtubeFormat || '',
+      youtubeFormat: result.youtubeFormat || "",
     };
   }, [session, clips, loadProject]);
 
   // Handle auto-extract keywords and add GIFs
   const handleExtractKeywordsAndAddGifs = useCallback(async () => {
     if (!session) {
-      throw new Error('No session available');
+      throw new Error("No session available");
     }
 
     // Check if we have a video asset
-    const videoAsset = assets.find(a => a.type === 'video');
+    const videoAsset = assets.find((a) => a.type === "video");
     if (!videoAsset) {
-      throw new Error('Please upload a video first');
+      throw new Error("Please upload a video first");
     }
 
     // Call the transcribe-and-extract endpoint
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/transcribe-and-extract`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/transcribe-and-extract`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to extract keywords');
+      throw new Error(error.error || "Failed to extract keywords");
     }
 
     const data = await response.json();
-    console.log('Transcription result:', data);
+    console.log("Transcription result:", data);
 
     // Add each GIF to the timeline at its timestamp on the V2 (overlay) track
     for (const gifInfo of data.gifAssets) {
       // Add clip to V2 track at the keyword's timestamp
-      addClip(gifInfo.assetId, 'V2', gifInfo.timestamp, 3); // 3 second duration for GIFs
+      addClip(gifInfo.assetId, "V2", gifInfo.timestamp, 3); // 3 second duration for GIFs
     }
 
     // Save the project with the new clips
@@ -783,58 +955,65 @@ export default function Home() {
   // Handle generating B-roll images and adding to timeline
   const handleGenerateBroll = useCallback(async () => {
     if (!session) {
-      throw new Error('No session available');
+      throw new Error("No session available");
     }
 
     // Check if we have a video asset
-    const videoAsset = assets.find(a => a.type === 'video');
+    const videoAsset = assets.find((a) => a.type === "video");
     if (!videoAsset) {
-      throw new Error('Please upload a video first');
+      throw new Error("Please upload a video first");
     }
 
     // Call the generate-broll endpoint
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/generate-broll`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/generate-broll`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to generate B-roll');
+      throw new Error(error.error || "Failed to generate B-roll");
     }
 
     const data = await response.json();
-    console.log('B-roll generation result:', data);
-    console.log('B-roll assets to add:', data.brollAssets);
+    console.log("B-roll generation result:", data);
+    console.log("B-roll assets to add:", data.brollAssets);
 
     if (!data.brollAssets || data.brollAssets.length === 0) {
-      console.warn('No B-roll assets returned from server');
-      throw new Error('No B-roll images were generated. The AI image generation may have failed - check the server logs for details.');
+      console.warn("No B-roll assets returned from server");
+      throw new Error(
+        "No B-roll images were generated. The AI image generation may have failed - check the server logs for details.",
+      );
     }
 
     // Refresh assets from server to get the newly generated B-roll images
-    console.log('Refreshing assets from server...');
+    console.log("Refreshing assets from server...");
     await refreshAssets();
 
     // Default B-roll transform: 1/5 screen width, lower-middle position
     // With new rendering: scale = width percentage, x = horizontal offset, y = vertical offset (positive = up)
     const DEFAULT_BROLL_TRANSFORM = {
-      scale: 0.2,   // 1/5th of screen width (20%)
-      x: 0,         // Centered horizontally
-      y: 0,         // No vertical offset (stays at bottom 10% default position)
+      scale: 0.2, // 1/5th of screen width (20%)
+      x: 0, // Centered horizontally
+      y: 0, // No vertical offset (stays at bottom 10% default position)
     };
 
     // Create clips directly (bypassing addClip to avoid stale closure issue)
-    const newClips: TimelineClip[] = data.brollAssets.map((brollInfo: { assetId: string; keyword: string; timestamp: number }) => ({
-      id: crypto.randomUUID(),
-      assetId: brollInfo.assetId,
-      trackId: 'V3',
-      start: brollInfo.timestamp,
-      duration: 3,
-      inPoint: 0,
-      outPoint: 3,
-      transform: DEFAULT_BROLL_TRANSFORM,
-    }));
+    const newClips: TimelineClip[] = data.brollAssets.map(
+      (brollInfo: { assetId: string; keyword: string; timestamp: number }) => ({
+        id: crypto.randomUUID(),
+        assetId: brollInfo.assetId,
+        trackId: "V3",
+        start: brollInfo.timestamp,
+        duration: 3,
+        inPoint: 0,
+        outPoint: 3,
+        transform: DEFAULT_BROLL_TRANSFORM,
+      }),
+    );
 
     console.log(`Created ${newClips.length} B-roll clips:`, newClips);
 
@@ -843,14 +1022,16 @@ export default function Home() {
     // Actually, let's just save directly to server and reload
 
     // Save clips directly to server
-    const projectResponse = await fetch(`http://localhost:3333/session/${session.sessionId}/project`);
+    const projectResponse = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/project`,
+    );
     const projectData = await projectResponse.json();
 
     const updatedClips = [...(projectData.clips || []), ...newClips];
 
     await fetch(`http://localhost:3333/session/${session.sessionId}/project`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...projectData,
         clips: updatedClips,
@@ -860,49 +1041,57 @@ export default function Home() {
     // Reload project to sync frontend state
     await loadProject();
 
-    console.log('B-roll clips added successfully!');
+    console.log("B-roll clips added successfully!");
 
     return data;
   }, [session, assets, refreshAssets, loadProject]);
 
   // Handle removing dead air / silence from the video
-  const handleRemoveDeadAir = useCallback(async (): Promise<{ duration: number; removedDuration: number }> => {
+  const handleRemoveDeadAir = useCallback(async (): Promise<{
+    duration: number;
+    removedDuration: number;
+  }> => {
     if (!session) {
-      throw new Error('No session available');
+      throw new Error("No session available");
     }
 
     // Check if we have a video asset
-    const videoAsset = assets.find(a => a.type === 'video');
+    const videoAsset = assets.find((a) => a.type === "video");
     if (!videoAsset) {
-      throw new Error('Please upload a video first');
+      throw new Error("Please upload a video first");
     }
 
-    console.log('Removing dead air from video...');
+    console.log("Removing dead air from video...");
 
     // Call the remove-dead-air endpoint
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/remove-dead-air`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        silenceThreshold: -30, // dB threshold
-        minSilenceDuration: 0.3, // minimum silence duration in seconds
-      }),
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/remove-dead-air`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          silenceThreshold: -30, // dB threshold
+          minSilenceDuration: 0.3, // minimum silence duration in seconds
+        }),
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to remove dead air');
+      throw new Error(error.error || "Failed to remove dead air");
     }
 
     const result = await response.json();
-    console.log('Dead air removal result:', result);
+    console.log("Dead air removal result:", result);
 
     // Refresh assets to get the updated video
     await refreshAssets();
 
     // Update the video clip duration if needed
     if (result.duration) {
-      const v1Clip = clips.find(c => c.trackId === 'V1' && c.assetId === videoAsset.id);
+      const v1Clip = clips.find(
+        (c) => c.trackId === "V1" && c.assetId === videoAsset.id,
+      );
       if (v1Clip) {
         updateClip(v1Clip.id, {
           duration: result.duration,
@@ -919,401 +1108,498 @@ export default function Home() {
   }, [session, assets, clips, refreshAssets, updateClip, saveProject]);
 
   // Handle transcribing video and adding captions
-  const handleTranscribeAndAddCaptions = useCallback(async (options?: { highlightColor?: string; fontFamily?: string }) => {
-    if (!session) {
-      throw new Error('No session available');
-    }
+  const handleTranscribeAndAddCaptions = useCallback(
+    async (options?: { highlightColor?: string; fontFamily?: string }) => {
+      if (!session) {
+        throw new Error("No session available");
+      }
 
-    // Find the video asset to transcribe
-    const videoAsset = assets.find(a => a.type === 'video');
+      // Find the video asset to transcribe
+      const videoAsset = assets.find((a) => a.type === "video");
 
-    if (!videoAsset || videoAsset.type !== 'video') {
-      throw new Error('Please upload a video first');
-    }
+      if (!videoAsset || videoAsset.type !== "video") {
+        throw new Error("Please upload a video first");
+      }
 
-    // Call the transcribe endpoint
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/transcribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assetId: videoAsset.id }),
-    });
+      // Call the transcribe endpoint
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/transcribe`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assetId: videoAsset.id }),
+        },
+      );
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to transcribe video');
-    }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to transcribe video");
+      }
 
-    const data = await response.json();
-    console.log('Transcription result:', data);
+      const data = await response.json();
+      console.log("Transcription result:", data);
 
-    if (data.words && data.words.length > 0) {
-      // Split words into chunks based on natural speech pauses
-      // A pause of 0.7+ seconds indicates a new caption segment
-      const PAUSE_THRESHOLD = 0.7; // seconds
-      const MAX_WORDS_PER_CHUNK = 5; // Cap at 5 words max
-      const chunks: Array<{ words: typeof data.words; start: number; end: number }> = [];
+      if (data.words && data.words.length > 0) {
+        // Split words into chunks based on natural speech pauses
+        // A pause of 0.7+ seconds indicates a new caption segment
+        const PAUSE_THRESHOLD = 0.7; // seconds
+        const MAX_WORDS_PER_CHUNK = 5; // Cap at 5 words max
+        const chunks: Array<{
+          words: typeof data.words;
+          start: number;
+          end: number;
+        }> = [];
 
-      let currentChunk: typeof data.words = [];
+        let currentChunk: typeof data.words = [];
 
-      for (let i = 0; i < data.words.length; i++) {
-        const word = data.words[i];
-        const prevWord = data.words[i - 1];
+        for (let i = 0; i < data.words.length; i++) {
+          const word = data.words[i];
+          const prevWord = data.words[i - 1];
 
-        // Start a new chunk if:
-        // 1. There's a significant pause between words
-        // 2. Current chunk has reached max words
-        const hasSignificantPause = prevWord && (word.start - prevWord.end) >= PAUSE_THRESHOLD;
-        const chunkIsFull = currentChunk.length >= MAX_WORDS_PER_CHUNK;
+          // Start a new chunk if:
+          // 1. There's a significant pause between words
+          // 2. Current chunk has reached max words
+          const hasSignificantPause =
+            prevWord && word.start - prevWord.end >= PAUSE_THRESHOLD;
+          const chunkIsFull = currentChunk.length >= MAX_WORDS_PER_CHUNK;
 
-        if (currentChunk.length > 0 && (hasSignificantPause || chunkIsFull)) {
-          // Save current chunk
+          if (currentChunk.length > 0 && (hasSignificantPause || chunkIsFull)) {
+            // Save current chunk
+            chunks.push({
+              words: currentChunk,
+              start: currentChunk[0].start,
+              end: currentChunk[currentChunk.length - 1].end,
+            });
+            currentChunk = [];
+          }
+
+          currentChunk.push(word);
+        }
+
+        // Don't forget the last chunk
+        if (currentChunk.length > 0) {
           chunks.push({
             words: currentChunk,
             start: currentChunk[0].start,
             end: currentChunk[currentChunk.length - 1].end,
           });
-          currentChunk = [];
         }
 
-        currentChunk.push(word);
-      }
-
-      // Don't forget the last chunk
-      if (currentChunk.length > 0) {
-        chunks.push({
-          words: currentChunk,
-          start: currentChunk[0].start,
-          end: currentChunk[currentChunk.length - 1].end,
+        // Create all caption clips at once (batched for performance)
+        const captionsToAdd = chunks.map((chunk) => {
+          const duration = chunk.end - chunk.start;
+          // Adjust word timestamps to be relative to chunk start
+          const relativeWords = chunk.words.map(
+            (w: { text: string; start: number; end: number }) => ({
+              ...w,
+              start: w.start - chunk.start,
+              end: w.end - chunk.start,
+            }),
+          );
+          return {
+            words: relativeWords,
+            start: chunk.start,
+            duration,
+            style: {
+              ...(options?.highlightColor && {
+                highlightColor: options.highlightColor,
+              }),
+              ...(options?.fontFamily && { fontFamily: options.fontFamily }),
+            },
+          };
         });
+
+        addCaptionClipsBatch(captionsToAdd);
+        await saveProject();
+        console.log(`Created ${chunks.length} caption clips`);
+      } else {
+        throw new Error(
+          "No speech detected in video. Make sure your video has audible speech.",
+        );
       }
 
-      // Create all caption clips at once (batched for performance)
-      const captionsToAdd = chunks.map(chunk => {
-        const duration = chunk.end - chunk.start;
-        // Adjust word timestamps to be relative to chunk start
-        const relativeWords = chunk.words.map((w: { text: string; start: number; end: number }) => ({
-          ...w,
-          start: w.start - chunk.start,
-          end: w.end - chunk.start,
-        }));
-        return {
-          words: relativeWords,
-          start: chunk.start,
-          duration,
-          style: {
-            ...(options?.highlightColor && { highlightColor: options.highlightColor }),
-            ...(options?.fontFamily && { fontFamily: options.fontFamily }),
-          },
-        };
-      });
-
-      addCaptionClipsBatch(captionsToAdd);
-      await saveProject();
-      console.log(`Created ${chunks.length} caption clips`);
-    } else {
-      throw new Error('No speech detected in video. Make sure your video has audible speech.');
-    }
-
-    return data;
-  }, [session, assets, addCaptionClipsBatch, saveProject]);
+      return data;
+    },
+    [session, assets, addCaptionClipsBatch, saveProject],
+  );
 
   // Handle updating caption style
-  const handleUpdateCaptionStyle = useCallback((clipId: string, styleUpdates: Partial<CaptionStyle>) => {
-    updateCaptionStyle(clipId, styleUpdates);
-    saveProject();
-  }, [updateCaptionStyle, saveProject]);
+  const handleUpdateCaptionStyle = useCallback(
+    (clipId: string, styleUpdates: Partial<CaptionStyle>) => {
+      updateCaptionStyle(clipId, styleUpdates);
+      saveProject();
+    },
+    [updateCaptionStyle, saveProject],
+  );
 
   // Wrapper for AI prompt panel motion graphics (takes config object)
-  const handleAddMotionGraphicFromPrompt = useCallback(async (config: {
-    templateId: TemplateId;
-    props: Record<string, unknown>;
-    duration: number;
-    startTime?: number;
-  }) => {
-    // Use startTime from config, or fall back to currentTime
-    const startAt = config.startTime ?? currentTime;
+  const handleAddMotionGraphicFromPrompt = useCallback(
+    async (config: {
+      templateId: TemplateId;
+      props: Record<string, unknown>;
+      duration: number;
+      startTime?: number;
+    }) => {
+      // Use startTime from config, or fall back to currentTime
+      const startAt = config.startTime ?? currentTime;
 
-    if (!session) {
-      alert('Please upload a video first to start a session');
-      return;
-    }
-
-    try {
-      // Call the server to render the motion graphic
-      const response = await fetch(`http://localhost:3333/session/${session.sessionId}/render-motion-graphic`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          templateId: config.templateId,
-          props: config.props,
-          duration: config.duration,
-          fps: 30,
-          width: 1920,
-          height: 1080,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to render motion graphic');
+      if (!session) {
+        alert("Please upload a video first to start a session");
+        return;
       }
 
-      const data = await response.json();
+      try {
+        // Call the server to render the motion graphic
+        const response = await fetch(
+          `http://localhost:3333/session/${session.sessionId}/render-motion-graphic`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              templateId: config.templateId,
+              props: config.props,
+              duration: config.duration,
+              fps: 30,
+              width: 1920,
+              height: 1080,
+            }),
+          },
+        );
 
-      // Refresh assets to sync with server (motion graphic was just created)
-      await refreshAssets();
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to render motion graphic");
+        }
 
-      // Add the rendered motion graphic to the timeline at specified position
-      addClip(data.assetId, 'V2', startAt, config.duration);
+        const data = await response.json();
 
-      // Switch to Main tab so user can see the added animation
-      switchTimelineTab('main');
+        // Refresh assets to sync with server (motion graphic was just created)
+        await refreshAssets();
 
-      await saveProject();
+        // Add the rendered motion graphic to the timeline at specified position
+        addClip(data.assetId, "V2", startAt, config.duration);
 
-      console.log('Motion graphic added from prompt:', data);
-    } catch (error) {
-      console.error('Failed to add motion graphic:', error);
-      throw error; // Re-throw so AIPromptPanel can show error
-    }
-  }, [session, currentTime, addClip, saveProject, refreshAssets, switchTimelineTab]);
+        // Switch to Main tab so user can see the added animation
+        switchTimelineTab("main");
+
+        await saveProject();
+
+        console.log("Motion graphic added from prompt:", data);
+      } catch (error) {
+        console.error("Failed to add motion graphic:", error);
+        throw error; // Re-throw so AIPromptPanel can show error
+      }
+    },
+    [
+      session,
+      currentTime,
+      addClip,
+      saveProject,
+      refreshAssets,
+      switchTimelineTab,
+    ],
+  );
 
   // Handle custom AI-generated animation creation
-  const handleCreateCustomAnimation = useCallback(async (description: string, startTime?: number, endTime?: number, attachedAssetIds?: string[], durationSeconds?: number) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
-    }
-
-    try {
-      // Find the primary video asset to use as context for the animation
-      // First check V1 clips, then fall back to first video asset
-      const v1Clips = clips.filter(c => c.trackId === 'V1');
-      let videoAssetId: string | undefined;
-
-      if (v1Clips.length > 0) {
-        const v1Asset = assets.find(a => a.id === v1Clips[0].assetId && a.type === 'video');
-        if (v1Asset) {
-          videoAssetId = v1Asset.id;
-        }
+  const handleCreateCustomAnimation = useCallback(
+    async (
+      description: string,
+      startTime?: number,
+      endTime?: number,
+      attachedAssetIds?: string[],
+      durationSeconds?: number,
+    ) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first to start a session");
       }
 
-      if (!videoAssetId) {
-        const firstVideo = assets.find(a => a.type === 'video' && !a.aiGenerated);
-        if (firstVideo) {
-          videoAssetId = firstVideo.id;
+      try {
+        // Find the primary video asset to use as context for the animation
+        // First check V1 clips, then fall back to first video asset
+        const v1Clips = clips.filter((c) => c.trackId === "V1");
+        let videoAssetId: string | undefined;
+
+        if (v1Clips.length > 0) {
+          const v1Asset = assets.find(
+            (a) => a.id === v1Clips[0].assetId && a.type === "video",
+          );
+          if (v1Asset) {
+            videoAssetId = v1Asset.id;
+          }
         }
+
+        if (!videoAssetId) {
+          const firstVideo = assets.find(
+            (a) => a.type === "video" && !a.aiGenerated,
+          );
+          if (firstVideo) {
+            videoAssetId = firstVideo.id;
+          }
+        }
+
+        console.log(
+          `[Animation] Creating with video context: ${videoAssetId || "none"}, time range: ${startTime !== undefined ? `${startTime}s` : "auto"}${endTime !== undefined ? ` - ${endTime}s` : ""}${attachedAssetIds?.length ? `, attached assets: ${attachedAssetIds.length}` : ""}${durationSeconds ? `, duration: ${durationSeconds}s` : ""}`,
+        );
+
+        // Call the server to generate AI animation with video context
+        const response = await fetch(
+          `http://localhost:3333/session/${session.sessionId}/generate-animation`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description,
+              videoAssetId, // Pass video for transcript context
+              startTime, // Optional: specific time range
+              endTime, // Optional: specific time range
+              attachedAssetIds, // Optional: images/videos to include in animation
+              durationSeconds, // Optional: user-specified duration
+              fps: 30,
+              width: 1920,
+              height: 1080,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to generate animation");
+        }
+
+        const data = await response.json();
+
+        // Refresh assets to sync with server (animation was just created)
+        await refreshAssets();
+
+        const animationDuration = data.duration;
+
+        // If startTime is provided (from time selection tool), use that
+        // Otherwise, detect animation type from description for placement
+        let insertTime: number;
+        if (startTime !== undefined) {
+          insertTime = startTime;
+          console.log(`Animation added at specified time: ${startTime}s`);
+        } else {
+          // Detect animation type from description for auto-placement
+          const lower = description.toLowerCase();
+          const isIntro =
+            lower.includes("intro") ||
+            lower.includes("opening") ||
+            lower.includes("start");
+          const isOutro =
+            lower.includes("outro") ||
+            lower.includes("ending") ||
+            lower.includes("conclusion") ||
+            lower.includes("close");
+          const videoDuration = getDuration();
+
+          if (isIntro) {
+            insertTime = 0;
+            console.log("Intro animation added as overlay at beginning");
+          } else if (isOutro) {
+            insertTime = videoDuration;
+            console.log("Outro animation added as overlay at end");
+          } else {
+            insertTime = currentTime;
+            console.log("Animation added as overlay at playhead position");
+          }
+        }
+
+        // Always add animations as overlays on V2
+        addClip(data.assetId, "V2", insertTime, animationDuration);
+
+        // Switch to Main tab so user can see the added animation
+        switchTimelineTab("main");
+
+        await saveProject();
+
+        console.log("Custom animation generated:", data, { insertTime });
+
+        return {
+          assetId: data.assetId,
+          duration: data.duration,
+        };
+      } catch (error) {
+        console.error("Failed to create custom animation:", error);
+        throw error;
+      }
+    },
+    [
+      session,
+      currentTime,
+      addClip,
+      saveProject,
+      refreshAssets,
+      getDuration,
+      switchTimelineTab,
+      clips,
+      assets,
+    ],
+  );
+
+  // Handle analyzing video for animation (returns concept for approval)
+  const handleAnalyzeForAnimation = useCallback(
+    async (request: {
+      type: "intro" | "outro" | "transition" | "highlight";
+      description?: string;
+      timeRange?: { start: number; end: number };
+    }) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first to start a session");
       }
 
-      console.log(`[Animation] Creating with video context: ${videoAssetId || 'none'}, time range: ${startTime !== undefined ? `${startTime}s` : 'auto'}${endTime !== undefined ? ` - ${endTime}s` : ''}${attachedAssetIds?.length ? `, attached assets: ${attachedAssetIds.length}` : ''}${durationSeconds ? `, duration: ${durationSeconds}s` : ''}`);
+      const videoAsset = assets.find((a) => a.type === "video");
+      if (!videoAsset) {
+        throw new Error("Please upload a video first");
+      }
 
-      // Call the server to generate AI animation with video context
-      const response = await fetch(`http://localhost:3333/session/${session.sessionId}/generate-animation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description,
-          videoAssetId, // Pass video for transcript context
-          startTime,    // Optional: specific time range
-          endTime,      // Optional: specific time range
-          attachedAssetIds, // Optional: images/videos to include in animation
-          durationSeconds, // Optional: user-specified duration
-          fps: 30,
-          width: 1920,
-          height: 1080,
-        }),
-      });
+      // Debug: log the time range being sent to server
+      console.log(
+        "[DEBUG] Sending analyze-for-animation with timeRange:",
+        JSON.stringify(request.timeRange),
+      );
+
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/analyze-for-animation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assetId: videoAsset.id,
+            type: request.type,
+            description: request.description,
+            // Pass time range so server only analyzes that segment
+            startTime: request.timeRange?.start,
+            endTime: request.timeRange?.end,
+          }),
+        },
+      );
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to generate animation');
+        throw new Error(error.error || "Failed to analyze video");
+      }
+
+      return await response.json();
+    },
+    [session, assets],
+  );
+
+  // Handle rendering from pre-approved concept (skips analysis, uses provided scenes)
+  const handleRenderFromConcept = useCallback(
+    async (concept: {
+      type: "intro" | "outro" | "transition" | "highlight";
+      scenes: Array<{
+        id: string;
+        type: string;
+        duration: number;
+        content: Record<string, unknown>;
+      }>;
+      totalDuration: number;
+      durationInSeconds: number;
+      backgroundColor: string;
+      contentSummary: string;
+      startTime?: number; // Optional: explicit placement time
+    }) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first to start a session");
+      }
+
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/render-from-concept`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            concept,
+            fps: 30,
+            width: 1920,
+            height: 1080,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to render animation");
       }
 
       const data = await response.json();
 
-      // Refresh assets to sync with server (animation was just created)
+      // Refresh assets to get the newly rendered animation
       await refreshAssets();
 
       const animationDuration = data.duration;
+      const videoDuration = getDuration();
 
-      // If startTime is provided (from time selection tool), use that
-      // Otherwise, detect animation type from description for placement
+      // Determine placement: use explicit startTime if provided, otherwise use type-based logic
       let insertTime: number;
-      if (startTime !== undefined) {
-        insertTime = startTime;
-        console.log(`Animation added at specified time: ${startTime}s`);
+      if (concept.startTime !== undefined) {
+        // Explicit time provided (from time selection tool)
+        insertTime = concept.startTime;
+        console.log(`Animation placed at specified time: ${insertTime}s`);
+      } else if (concept.type === "intro") {
+        insertTime = 0;
+        console.log("Intro animation added at beginning");
+      } else if (concept.type === "outro") {
+        insertTime = videoDuration;
+        console.log("Outro animation added at end");
       } else {
-        // Detect animation type from description for auto-placement
-        const lower = description.toLowerCase();
-        const isIntro = lower.includes('intro') || lower.includes('opening') || lower.includes('start');
-        const isOutro = lower.includes('outro') || lower.includes('ending') || lower.includes('conclusion') || lower.includes('close');
-        const videoDuration = getDuration();
-
-        if (isIntro) {
-          insertTime = 0;
-          console.log('Intro animation added as overlay at beginning');
-        } else if (isOutro) {
-          insertTime = videoDuration;
-          console.log('Outro animation added as overlay at end');
-        } else {
-          insertTime = currentTime;
-          console.log('Animation added as overlay at playhead position');
-        }
+        insertTime = currentTime;
+        console.log("Animation added at current playhead");
       }
 
-      // Always add animations as overlays on V2
-      addClip(data.assetId, 'V2', insertTime, animationDuration);
+      // Always add as overlay on V2 - never shift the original video
+      addClip(data.assetId, "V2", insertTime, animationDuration);
 
-      // Switch to Main tab so user can see the added animation
-      switchTimelineTab('main');
+      // Switch to Main tab so user can see the animation
+      switchTimelineTab("main");
 
       await saveProject();
 
-      console.log('Custom animation generated:', data, { insertTime });
+      console.log("Animation rendered from concept:", data, {
+        type: concept.type,
+        insertTime,
+      });
 
       return {
         assetId: data.assetId,
         duration: data.duration,
       };
-    } catch (error) {
-      console.error('Failed to create custom animation:', error);
-      throw error;
-    }
-  }, [session, currentTime, addClip, saveProject, refreshAssets, getDuration, switchTimelineTab, clips, assets]);
-
-  // Handle analyzing video for animation (returns concept for approval)
-  const handleAnalyzeForAnimation = useCallback(async (request: {
-    type: 'intro' | 'outro' | 'transition' | 'highlight';
-    description?: string;
-    timeRange?: { start: number; end: number };
-  }) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
-    }
-
-    const videoAsset = assets.find(a => a.type === 'video');
-    if (!videoAsset) {
-      throw new Error('Please upload a video first');
-    }
-
-    // Debug: log the time range being sent to server
-    console.log('[DEBUG] Sending analyze-for-animation with timeRange:', JSON.stringify(request.timeRange));
-
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/analyze-for-animation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assetId: videoAsset.id,
-        type: request.type,
-        description: request.description,
-        // Pass time range so server only analyzes that segment
-        startTime: request.timeRange?.start,
-        endTime: request.timeRange?.end,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to analyze video');
-    }
-
-    return await response.json();
-  }, [session, assets]);
-
-  // Handle rendering from pre-approved concept (skips analysis, uses provided scenes)
-  const handleRenderFromConcept = useCallback(async (concept: {
-    type: 'intro' | 'outro' | 'transition' | 'highlight';
-    scenes: Array<{
-      id: string;
-      type: string;
-      duration: number;
-      content: Record<string, unknown>;
-    }>;
-    totalDuration: number;
-    durationInSeconds: number;
-    backgroundColor: string;
-    contentSummary: string;
-    startTime?: number; // Optional: explicit placement time
-  }) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
-    }
-
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/render-from-concept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        concept,
-        fps: 30,
-        width: 1920,
-        height: 1080,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to render animation');
-    }
-
-    const data = await response.json();
-
-    // Refresh assets to get the newly rendered animation
-    await refreshAssets();
-
-    const animationDuration = data.duration;
-    const videoDuration = getDuration();
-
-    // Determine placement: use explicit startTime if provided, otherwise use type-based logic
-    let insertTime: number;
-    if (concept.startTime !== undefined) {
-      // Explicit time provided (from time selection tool)
-      insertTime = concept.startTime;
-      console.log(`Animation placed at specified time: ${insertTime}s`);
-    } else if (concept.type === 'intro') {
-      insertTime = 0;
-      console.log('Intro animation added at beginning');
-    } else if (concept.type === 'outro') {
-      insertTime = videoDuration;
-      console.log('Outro animation added at end');
-    } else {
-      insertTime = currentTime;
-      console.log('Animation added at current playhead');
-    }
-
-    // Always add as overlay on V2 - never shift the original video
-    addClip(data.assetId, 'V2', insertTime, animationDuration);
-
-    // Switch to Main tab so user can see the animation
-    switchTimelineTab('main');
-
-    await saveProject();
-
-    console.log('Animation rendered from concept:', data, { type: concept.type, insertTime });
-
-    return {
-      assetId: data.assetId,
-      duration: data.duration,
-    };
-  }, [session, currentTime, refreshAssets, addClip, saveProject, getDuration, switchTimelineTab]);
+    },
+    [
+      session,
+      currentTime,
+      refreshAssets,
+      addClip,
+      saveProject,
+      getDuration,
+      switchTimelineTab,
+    ],
+  );
 
   // Handle generating transcript animation (kinetic typography from speech)
   const handleGenerateTranscriptAnimation = useCallback(async () => {
     if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
+      throw new Error("Please upload a video first to start a session");
     }
 
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/generate-transcript-animation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fps: 30,
-        width: 1920,
-        height: 1080,
-      }),
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/generate-transcript-animation`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fps: 30,
+          width: 1920,
+          height: 1080,
+        }),
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to generate transcript animation');
+      throw new Error(error.error || "Failed to generate transcript animation");
     }
 
     const data = await response.json();
@@ -1322,11 +1608,11 @@ export default function Home() {
     await refreshAssets();
 
     // Add the animation as an overlay on V2 at the current playhead
-    addClip(data.assetId, 'V2', currentTime, data.duration);
+    addClip(data.assetId, "V2", currentTime, data.duration);
 
     await saveProject();
 
-    console.log('Transcript animation generated:', data);
+    console.log("Transcript animation generated:", data);
 
     return {
       assetId: data.assetId,
@@ -1335,75 +1621,91 @@ export default function Home() {
   }, [session, currentTime, refreshAssets, addClip, saveProject]);
 
   // Handle batch animation generation (multiple animations across the video)
-  const handleGenerateBatchAnimations = useCallback(async (count: number) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
-    }
+  const handleGenerateBatchAnimations = useCallback(
+    async (count: number) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first to start a session");
+      }
 
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/generate-batch-animations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        count,
-        fps: 30,
-        width: 1920,
-        height: 1080,
-      }),
-    });
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/generate-batch-animations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            count,
+            fps: 30,
+            width: 1920,
+            height: 1080,
+          }),
+        },
+      );
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate batch animations');
-    }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate batch animations");
+      }
 
-    const data = await response.json();
+      const data = await response.json();
 
-    // Refresh assets to get the newly generated animations
-    await refreshAssets();
+      // Refresh assets to get the newly generated animations
+      await refreshAssets();
 
-    // Add each animation to the timeline at its planned position
-    for (const animation of data.animations) {
-      addClip(animation.assetId, 'V2', animation.startTime, animation.duration);
-    }
+      // Add each animation to the timeline at its planned position
+      for (const animation of data.animations) {
+        addClip(
+          animation.assetId,
+          "V2",
+          animation.startTime,
+          animation.duration,
+        );
+      }
 
-    await saveProject();
+      await saveProject();
 
-    console.log('Batch animations generated:', data);
+      console.log("Batch animations generated:", data);
 
-    return {
-      animations: data.animations,
-      videoDuration: data.videoDuration,
-    };
-  }, [session, refreshAssets, addClip, saveProject]);
+      return {
+        animations: data.animations,
+        videoDuration: data.videoDuration,
+      };
+    },
+    [session, refreshAssets, addClip, saveProject],
+  );
 
   // Handle extract audio (separates audio to A1 track, replaces video with muted version)
   const handleExtractAudio = useCallback(async () => {
     if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
+      throw new Error("Please upload a video first to start a session");
     }
 
     // Find the main video asset (non-AI generated, on V1)
-    const v1Clip = clips.find(c => c.trackId === 'V1');
+    const v1Clip = clips.find((c) => c.trackId === "V1");
     if (!v1Clip) {
-      throw new Error('No video clip found on V1 track');
+      throw new Error("No video clip found on V1 track");
     }
 
-    const videoAsset = assets.find(a => a.id === v1Clip.assetId && a.type === 'video');
+    const videoAsset = assets.find(
+      (a) => a.id === v1Clip.assetId && a.type === "video",
+    );
     if (!videoAsset) {
-      throw new Error('No video asset found');
+      throw new Error("No video asset found");
     }
 
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/extract-audio`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assetId: videoAsset.id,
-      }),
-    });
+    const response = await fetch(
+      `http://localhost:3333/session/${session.sessionId}/extract-audio`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: videoAsset.id,
+        }),
+      },
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to extract audio');
+      throw new Error(error.error || "Failed to extract audio");
     }
 
     const data = await response.json();
@@ -1415,11 +1717,11 @@ export default function Home() {
     updateClip(v1Clip.id, { assetId: data.mutedVideoAsset.id });
 
     // Add the audio to A1 track at the same position as the video
-    addClip(data.audioAsset.id, 'A1', v1Clip.start, data.audioAsset.duration);
+    addClip(data.audioAsset.id, "A1", v1Clip.start, data.audioAsset.duration);
 
     await saveProject();
 
-    console.log('Audio extracted:', data);
+    console.log("Audio extracted:", data);
 
     return {
       audioAsset: data.audioAsset,
@@ -1429,194 +1731,222 @@ export default function Home() {
   }, [session, clips, assets, refreshAssets, updateClip, addClip, saveProject]);
 
   // Handle contextual animation creation (uses video content to inform the animation)
-  const handleCreateContextualAnimation = useCallback(async (request: {
-    type: 'intro' | 'outro' | 'transition' | 'highlight';
-    description?: string;
-  }) => {
-    if (!session?.sessionId) {
-      throw new Error('Please upload a video first to start a session');
-    }
-
-    // Find the main video asset to analyze
-    const videoAsset = assets.find(a => a.type === 'video');
-    if (!videoAsset) {
-      throw new Error('Please upload a video first');
-    }
-
-    try {
-      // Call the server to generate contextual animation
-      // This endpoint will:
-      // 1. Transcribe the video (if not already done)
-      // 2. Analyze the content with AI
-      // 3. Generate Remotion code based on the content
-      // 4. Render the animation
-      const response = await fetch(`http://localhost:3333/session/${session.sessionId}/generate-contextual-animation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          assetId: videoAsset.id,
-          type: request.type,
-          description: request.description,
-          fps: 30,
-          width: 1920,
-          height: 1080,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to generate animation');
+  const handleCreateContextualAnimation = useCallback(
+    async (request: {
+      type: "intro" | "outro" | "transition" | "highlight";
+      description?: string;
+    }) => {
+      if (!session?.sessionId) {
+        throw new Error("Please upload a video first to start a session");
       }
 
-      const data = await response.json();
+      // Find the main video asset to analyze
+      const videoAsset = assets.find((a) => a.type === "video");
+      if (!videoAsset) {
+        throw new Error("Please upload a video first");
+      }
 
-      // Refresh assets to get the newly generated animation
-      await refreshAssets();
+      try {
+        // Call the server to generate contextual animation
+        // This endpoint will:
+        // 1. Transcribe the video (if not already done)
+        // 2. Analyze the content with AI
+        // 3. Generate Remotion code based on the content
+        // 4. Render the animation
+        const response = await fetch(
+          `http://localhost:3333/session/${session.sessionId}/generate-contextual-animation`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assetId: videoAsset.id,
+              type: request.type,
+              description: request.description,
+              fps: 30,
+              width: 1920,
+              height: 1080,
+            }),
+          },
+        );
 
-      // Add the generated animation to the timeline
-      // Intro goes at the beginning, outro at the end
-      const insertTime = request.type === 'outro' ? getDuration() : 0;
-      addClip(data.assetId, 'V2', insertTime, data.duration);
-      await saveProject();
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to generate animation");
+        }
 
-      console.log('Contextual animation generated:', data);
+        const data = await response.json();
 
-      return {
-        assetId: data.assetId,
-        duration: data.duration,
-        contentSummary: data.contentSummary,
-        sceneCount: data.sceneCount,
-      };
-    } catch (error) {
-      console.error('Failed to create contextual animation:', error);
-      throw error;
-    }
-  }, [session, assets, addClip, saveProject, getDuration, refreshAssets]);
+        // Refresh assets to get the newly generated animation
+        await refreshAssets();
+
+        // Add the generated animation to the timeline
+        // Intro goes at the beginning, outro at the end
+        const insertTime = request.type === "outro" ? getDuration() : 0;
+        addClip(data.assetId, "V2", insertTime, data.duration);
+        await saveProject();
+
+        console.log("Contextual animation generated:", data);
+
+        return {
+          assetId: data.assetId,
+          duration: data.duration,
+          contentSummary: data.contentSummary,
+          sceneCount: data.sceneCount,
+        };
+      } catch (error) {
+        console.error("Failed to create contextual animation:", error);
+        throw error;
+      }
+    },
+    [session, assets, addClip, saveProject, getDuration, refreshAssets],
+  );
 
   // Handle render/export
   const handleExport = useCallback(async () => {
     if (clips.length === 0) {
-      alert('Add some clips to the timeline first');
+      alert("Add some clips to the timeline first");
       return;
     }
 
     try {
       const downloadUrl = await renderProject(false);
       // Trigger download
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = 'export.mp4';
+      link.download = "export.mp4";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (error) {
-      console.error('Export failed:', error);
-      alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Export failed:", error);
+      alert(
+        `Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }, [clips.length, renderProject]);
 
   // Edit an existing animation with a new prompt
-  const handleEditAnimation = useCallback(async (
-    assetId: string,
-    editPrompt: string,
-    v1Context?: { assetId: string; filename: string; type: string; duration?: number },
-    tabIdToUpdate?: string
-  ) => {
-    if (!session?.sessionId) {
-      throw new Error('No active session');
-    }
+  const handleEditAnimation = useCallback(
+    async (
+      assetId: string,
+      editPrompt: string,
+      v1Context?: {
+        assetId: string;
+        filename: string;
+        type: string;
+        duration?: number;
+      },
+      tabIdToUpdate?: string,
+    ) => {
+      if (!session?.sessionId) {
+        throw new Error("No active session");
+      }
 
-    // Get available assets to pass to the AI
-    const availableAssets = assets
-      .filter(a => a.type === 'image' || a.type === 'video')
-      .map(a => ({
-        id: a.id,
-        type: a.type,
-        filename: a.filename,
-        duration: a.duration,
-      }));
+      // Get available assets to pass to the AI
+      const availableAssets = assets
+        .filter((a) => a.type === "image" || a.type === "video")
+        .map((a) => ({
+          id: a.id,
+          type: a.type,
+          filename: a.filename,
+          duration: a.duration,
+        }));
 
-    const response = await fetch(`http://localhost:3333/session/${session.sessionId}/edit-animation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assetId,
-        editPrompt,
-        assets: availableAssets,
-        v1Context, // Pass V1 clip context for hybrid approach
-        fps: 30,
-        width: 1920,
-        height: 1080,
-      }),
-    });
+      const response = await fetch(
+        `http://localhost:3333/session/${session.sessionId}/edit-animation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assetId,
+            editPrompt,
+            assets: availableAssets,
+            v1Context, // Pass V1 clip context for hybrid approach
+            fps: 30,
+            width: 1920,
+            height: 1080,
+          }),
+        },
+      );
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to edit animation');
-    }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to edit animation");
+      }
 
-    const data = await response.json();
+      const data = await response.json();
 
-    console.log('[handleEditAnimation] ===== STEP 1: Server response =====');
-    console.log('[handleEditAnimation] Server response:', {
-      assetId: data.assetId,
-      originalAssetId: assetId,
-      isSameAsset: data.assetId === assetId,
-      duration: data.duration,
-      editCount: data.editCount,
-    });
+      console.log("[handleEditAnimation] ===== STEP 1: Server response =====");
+      console.log("[handleEditAnimation] Server response:", {
+        assetId: data.assetId,
+        originalAssetId: assetId,
+        isSameAsset: data.assetId === assetId,
+        duration: data.duration,
+        editCount: data.editCount,
+      });
 
-    console.log('[handleEditAnimation] ===== STEP 2: About to call refreshAssets =====');
-    console.log('[handleEditAnimation] Tab to update:', tabIdToUpdate);
+      console.log(
+        "[handleEditAnimation] ===== STEP 2: About to call refreshAssets =====",
+      );
+      console.log("[handleEditAnimation] Tab to update:", tabIdToUpdate);
 
-    // Refresh assets to sync with server (same asset ID, but updated duration/thumbnail)
-    await refreshAssets();
+      // Refresh assets to sync with server (same asset ID, but updated duration/thumbnail)
+      await refreshAssets();
 
-    console.log('[handleEditAnimation] ===== STEP 3: refreshAssets complete =====');
+      console.log(
+        "[handleEditAnimation] ===== STEP 3: refreshAssets complete =====",
+      );
 
-    // Update the edit tab's clip duration if it changed (asset ID stays the same)
-    if (tabIdToUpdate && tabIdToUpdate !== 'main' && data.duration) {
-      console.log('[handleEditAnimation] ===== STEP 4: Updating edit tab =====');
-      console.log('[handleEditAnimation] Updating edit tab clip duration:', {
-        tabId: tabIdToUpdate,
+      // Update the edit tab's clip duration if it changed (asset ID stays the same)
+      if (tabIdToUpdate && tabIdToUpdate !== "main" && data.duration) {
+        console.log(
+          "[handleEditAnimation] ===== STEP 4: Updating edit tab =====",
+        );
+        console.log("[handleEditAnimation] Updating edit tab clip duration:", {
+          tabId: tabIdToUpdate,
+          assetId: data.assetId,
+          duration: data.duration,
+        });
+        // Update the V1 clip's duration to match the new animation duration
+        updateTabAsset(tabIdToUpdate, data.assetId, data.duration);
+      }
+
+      console.log("[handleEditAnimation] ===== STEP 5: Complete =====");
+
+      return {
         assetId: data.assetId,
         duration: data.duration,
-      });
-      // Update the V1 clip's duration to match the new animation duration
-      updateTabAsset(tabIdToUpdate, data.assetId, data.duration);
-    }
-
-    console.log('[handleEditAnimation] ===== STEP 5: Complete =====');
-
-    return {
-      assetId: data.assetId,
-      duration: data.duration,
-      sceneCount: data.sceneCount,
-      editCount: data.editCount,
-    };
-  }, [session, assets, refreshAssets, updateTabAsset]);
+        sceneCount: data.sceneCount,
+        editCount: data.editCount,
+      };
+    },
+    [session, assets, refreshAssets, updateTabAsset],
+  );
 
   // Open an animation in a new timeline tab for isolated editing
-  const handleOpenAnimationInTab = useCallback((assetId: string, animationName: string) => {
-    const asset = assets.find(a => a.id === assetId);
-    if (!asset) return;
+  const handleOpenAnimationInTab = useCallback(
+    (assetId: string, animationName: string) => {
+      const asset = assets.find((a) => a.id === assetId);
+      if (!asset) return;
 
-    // Create initial clip for the tab's timeline
-    const initialClip: TimelineClip = {
-      id: crypto.randomUUID(),
-      assetId: assetId,
-      trackId: 'V1',
-      start: 0,
-      duration: asset.duration || 10,
-      inPoint: 0,
-      outPoint: asset.duration || 10,
-    };
+      // Create initial clip for the tab's timeline
+      const initialClip: TimelineClip = {
+        id: crypto.randomUUID(),
+        assetId: assetId,
+        trackId: "V1",
+        start: 0,
+        duration: asset.duration || 10,
+        inPoint: 0,
+        outPoint: asset.duration || 10,
+      };
 
-    const tabId = createTimelineTab(animationName, assetId, [initialClip]);
-    console.log('Created timeline tab for animation:', tabId, animationName);
+      const tabId = createTimelineTab(animationName, assetId, [initialClip]);
+      console.log("Created timeline tab for animation:", tabId, animationName);
 
-    return tabId;
-  }, [assets, createTimelineTab]);
+      return tabId;
+    },
+    [assets, createTimelineTab],
+  );
 
   const isProcessing = loading || legacyProcessing;
   const currentStatus = status || legacyStatus;
@@ -1677,11 +2007,14 @@ export default function Home() {
         onCloseTab={closeTimelineTab}
         onAddTab={() => {
           // Count existing "Edit Tab" tabs to generate the next number
-          const editTabCount = timelineTabs.filter(t => t.name.startsWith('Edit Tab')).length;
-          const tabName = editTabCount === 0 ? 'Edit Tab' : `Edit Tab ${editTabCount + 1}`;
+          const editTabCount = timelineTabs.filter((t) =>
+            t.name.startsWith("Edit Tab"),
+          ).length;
+          const tabName =
+            editTabCount === 0 ? "Edit Tab" : `Edit Tab ${editTabCount + 1}`;
           createTimelineTab(tabName, `edit-${Date.now()}`, []); // Empty clips array for brand new tab
         }}
-        show={assets.some(a => a.type === 'video')}
+        show={assets.some((a) => a.type === "video")}
       />
 
       {/* Chapters Modal */}
@@ -1703,11 +2036,15 @@ export default function Home() {
 
             <div className="p-4 overflow-y-auto flex-1">
               {chapterData.summary && (
-                <p className="text-sm text-zinc-400 mb-4">{chapterData.summary}</p>
+                <p className="text-sm text-zinc-400 mb-4">
+                  {chapterData.summary}
+                </p>
               )}
 
               <div className="bg-zinc-800 rounded-lg p-4 font-mono text-sm">
-                <pre className="whitespace-pre-wrap text-zinc-200">{chapterData.youtubeFormat}</pre>
+                <pre className="whitespace-pre-wrap text-zinc-200">
+                  {chapterData.youtubeFormat}
+                </pre>
               </div>
 
               <div className="mt-4 space-y-2">
@@ -1722,7 +2059,10 @@ export default function Home() {
                   >
                     <span className="text-zinc-200">{ch.title}</span>
                     <span className="text-zinc-500 text-sm">
-                      {Math.floor(ch.start / 60)}:{Math.floor(ch.start % 60).toString().padStart(2, '0')}
+                      {Math.floor(ch.start / 60)}:
+                      {Math.floor(ch.start % 60)
+                        .toString()
+                        .padStart(2, "0")}
                     </span>
                   </button>
                 ))}
@@ -1767,7 +2107,9 @@ export default function Home() {
         >
           <div className="flex flex-col h-full">
             {/* Asset Library */}
-            <div className={`${selectedClipId ? 'h-1/2' : 'h-full'} overflow-hidden`}>
+            <div
+              className={`${selectedClipId ? "h-1/2" : "h-full"} overflow-hidden`}
+            >
               <AssetLibrary
                 assets={assets}
                 onUpload={handleAssetUpload}
@@ -1786,7 +2128,9 @@ export default function Home() {
                 {selectedCaptionData ? (
                   <CaptionPropertiesPanel
                     captionData={selectedCaptionData}
-                    onUpdateStyle={(styleUpdates) => handleUpdateCaptionStyle(selectedClipId, styleUpdates)}
+                    onUpdateStyle={(styleUpdates) =>
+                      handleUpdateCaptionStyle(selectedClipId, styleUpdates)
+                    }
                     onClose={() => setSelectedClipId(null)}
                   />
                 ) : (
@@ -1818,17 +2162,23 @@ export default function Home() {
               />
             ) : clips.length > 0 ? (
               // Assets exist but playhead is not over any clip
-              <div className={`relative ${aspectRatio === '9:16' ? 'h-[65vh] w-auto aspect-[9/16]' : 'w-full max-w-4xl aspect-video'} bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 flex items-center justify-center`}>
+              <div
+                className={`relative ${aspectRatio === "9:16" ? "h-[65vh] w-auto aspect-[9/16]" : "w-full max-w-4xl aspect-video"} bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 flex items-center justify-center`}
+              >
                 <div className="text-center text-zinc-600">
                   <div className="text-sm">No clip at playhead</div>
-                  <div className="text-xs mt-1">Move playhead over a clip to preview</div>
+                  <div className="text-xs mt-1">
+                    Move playhead over a clip to preview
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center text-zinc-500">
                 <Play className="w-16 h-16 mb-4 opacity-50" />
                 <p className="text-sm">Upload assets from the left panel</p>
-                <p className="text-xs text-zinc-600 mt-1">Drag them to the timeline below</p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Drag them to the timeline below
+                </p>
               </div>
             )}
           </div>
@@ -1861,7 +2211,7 @@ export default function Home() {
               onAddText={handleAddText}
               onToggleAspectRatio={handleToggleAspectRatio}
               autoSnap={autoSnap}
-              onToggleAutoSnap={() => setAutoSnap(prev => !prev)}
+              onToggleAutoSnap={() => setAutoSnap((prev) => !prev)}
               onDropAsset={handleDropAsset}
               onSave={saveProject}
               getCaptionData={getCaptionData}
@@ -1880,33 +2230,33 @@ export default function Home() {
             {/* Agent Tabs */}
             <div className="flex items-center gap-1 px-2 border-b border-zinc-800/50">
               <button
-                onClick={() => setActiveAgent('director')}
+                onClick={() => setActiveAgent("director")}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
-                  activeAgent === 'director'
-                    ? 'text-orange-500 border-b-2 border-orange-500 bg-zinc-800/30'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                  activeAgent === "director"
+                    ? "text-orange-500 border-b-2 border-orange-500 bg-zinc-800/30"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20"
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 Director
               </button>
               <button
-                onClick={() => setActiveAgent('picasso')}
+                onClick={() => setActiveAgent("picasso")}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
-                  activeAgent === 'picasso'
-                    ? 'text-orange-300 border-b-2 border-orange-300 bg-zinc-800/30'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                  activeAgent === "picasso"
+                    ? "text-orange-300 border-b-2 border-orange-300 bg-zinc-800/30"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20"
                 }`}
               >
                 <Palette className="w-3.5 h-3.5" />
                 Picasso
               </button>
               <button
-                onClick={() => setActiveAgent('dicaprio')}
+                onClick={() => setActiveAgent("dicaprio")}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
-                  activeAgent === 'dicaprio'
-                    ? 'text-zinc-300 border-b-2 border-zinc-300 bg-zinc-800/30'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                  activeAgent === "dicaprio"
+                    ? "text-zinc-300 border-b-2 border-zinc-300 bg-zinc-800/30"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20"
                 }`}
               >
                 <Film className="w-3.5 h-3.5" />
@@ -1916,7 +2266,9 @@ export default function Home() {
 
             {/* AI Chat Panels - both mounted to preserve state, hidden via CSS */}
             <div className="flex-1 overflow-hidden relative">
-              <div className={`absolute inset-0 ${activeAgent === 'director' ? '' : 'hidden'}`}>
+              <div
+                className={`absolute inset-0 ${activeAgent === "director" ? "" : "hidden"}`}
+              >
                 <AIPromptPanel
                   onApplyEdit={handleApplyEdit}
                   onExtractKeywordsAndAddGifs={handleExtractKeywordsAndAddGifs}
@@ -1929,7 +2281,9 @@ export default function Home() {
                   onUploadAttachment={uploadAsset}
                   onAnalyzeForAnimation={handleAnalyzeForAnimation}
                   onRenderFromConcept={handleRenderFromConcept}
-                  onGenerateTranscriptAnimation={handleGenerateTranscriptAnimation}
+                  onGenerateTranscriptAnimation={
+                    handleGenerateTranscriptAnimation
+                  }
                   onGenerateBatchAnimations={handleGenerateBatchAnimations}
                   onExtractAudio={handleExtractAudio}
                   onCreateContextualAnimation={handleCreateContextualAnimation}
@@ -1938,32 +2292,44 @@ export default function Home() {
                   isApplying={isProcessing}
                   applyProgress={0}
                   applyStatus={currentStatus}
-                  hasVideo={assets.some(a => a.type === 'video')}
+                  hasVideo={assets.some((a) => a.type === "video")}
                   clips={clips}
                   tracks={tracks}
                   assets={assets}
                   currentTime={currentTime}
                   selectedClipId={selectedClipId}
                   activeTabId={activeTabId}
-                  editTabAssetId={activeTabId !== 'main' ? timelineTabs.find(t => t.id === activeTabId)?.assetId : undefined}
-                  editTabClips={activeTabId !== 'main' ? timelineTabs.find(t => t.id === activeTabId)?.clips : undefined}
+                  editTabAssetId={
+                    activeTabId !== "main"
+                      ? timelineTabs.find((t) => t.id === activeTabId)?.assetId
+                      : undefined
+                  }
+                  editTabClips={
+                    activeTabId !== "main"
+                      ? timelineTabs.find((t) => t.id === activeTabId)?.clips
+                      : undefined
+                  }
                 />
               </div>
-              <div className={`absolute inset-0 ${activeAgent === 'picasso' ? '' : 'hidden'}`}>
+              <div
+                className={`absolute inset-0 ${activeAgent === "picasso" ? "" : "hidden"}`}
+              >
                 <PicassoPanel
                   sessionId={session?.sessionId ?? null}
                   onImageGenerated={(assetId) => {
-                    console.log('Image generated:', assetId);
+                    console.log("Image generated:", assetId);
                   }}
                   onRefreshAssets={refreshAssets}
                 />
               </div>
-              <div className={`absolute inset-0 ${activeAgent === 'dicaprio' ? '' : 'hidden'}`}>
+              <div
+                className={`absolute inset-0 ${activeAgent === "dicaprio" ? "" : "hidden"}`}
+              >
                 <DiCaprioPanel
                   sessionId={session?.sessionId ?? null}
                   assets={assets}
                   onVideoGenerated={(assetId) => {
-                    console.log('Video generated:', assetId);
+                    console.log("Video generated:", assetId);
                   }}
                   onRefreshAssets={refreshAssets}
                 />
