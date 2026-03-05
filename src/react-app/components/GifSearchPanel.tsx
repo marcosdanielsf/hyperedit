@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Search, TrendingUp, Plus, X, Loader2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from "react";
+import { Search, TrendingUp, Plus, X, Loader2 } from "lucide-react";
 
 interface GifResult {
   id: string;
@@ -24,15 +24,19 @@ interface GifSearchPanelProps {
   }) => void;
 }
 
-const LOCAL_FFMPEG_URL = 'http://localhost:3333';
+import { FFMPEG_URL } from "../config";
 
-export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSearchPanelProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+export default function GifSearchPanel({
+  sessionId,
+  onClose,
+  onGifAdded,
+}: GifSearchPanelProps) {
+  const [searchQuery, setSearchQuery] = useState("");
   const [gifs, setGifs] = useState<GifResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [addingGifId, setAddingGifId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'trending' | 'search'>('trending');
+  const [mode, setMode] = useState<"trending" | "search">("trending");
 
   // Load trending GIFs on mount
   useEffect(() => {
@@ -43,68 +47,87 @@ export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSe
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${LOCAL_FFMPEG_URL}/session/${sessionId}/giphy/trending?limit=24`);
-      if (!response.ok) throw new Error('Failed to load trending GIFs');
+      const response = await fetch(
+        `${FFMPEG_URL}/session/${sessionId}/giphy/trending?limit=24`,
+      );
+      if (!response.ok) throw new Error("Failed to load trending GIFs");
       const data = await response.json();
       setGifs(data.gifs);
-      setMode('trending');
+      setMode("trending");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load GIFs');
+      setError(err instanceof Error ? err.message : "Failed to load GIFs");
     } finally {
       setLoading(false);
     }
   }, [sessionId]);
 
-  const handleSearch = useCallback(async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!searchQuery.trim()) {
-      loadTrending();
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `${LOCAL_FFMPEG_URL}/session/${sessionId}/giphy/search?q=${encodeURIComponent(searchQuery)}&limit=24`
-      );
-      if (!response.ok) throw new Error('Search failed');
-      const data = await response.json();
-      setGifs(data.gifs);
-      setMode('search');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, searchQuery, loadTrending]);
-
-  const handleAddGif = useCallback(async (gif: GifResult) => {
-    setAddingGifId(gif.id);
-    try {
-      const response = await fetch(`${LOCAL_FFMPEG_URL}/session/${sessionId}/giphy/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gifUrl: gif.url, title: gif.title }),
-      });
-
-      if (!response.ok) throw new Error('Failed to add GIF');
-      const data = await response.json();
-
-      if (data.asset) {
-        onGifAdded(data.asset);
+  const handleSearch = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (!searchQuery.trim()) {
+        loadTrending();
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add GIF');
-    } finally {
-      setAddingGifId(null);
-    }
-  }, [sessionId, onGifAdded]);
+
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(
+          `${FFMPEG_URL}/session/${sessionId}/giphy/search?q=${encodeURIComponent(searchQuery)}&limit=24`,
+        );
+        if (!response.ok) throw new Error("Search failed");
+        const data = await response.json();
+        setGifs(data.gifs);
+        setMode("search");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Search failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sessionId, searchQuery, loadTrending],
+  );
+
+  const handleAddGif = useCallback(
+    async (gif: GifResult) => {
+      setAddingGifId(gif.id);
+      try {
+        const response = await fetch(
+          `${FFMPEG_URL}/session/${sessionId}/giphy/add`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ gifUrl: gif.url, title: gif.title }),
+          },
+        );
+
+        if (!response.ok) throw new Error("Failed to add GIF");
+        const data = await response.json();
+
+        if (data.asset) {
+          onGifAdded(data.asset);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add GIF");
+      } finally {
+        setAddingGifId(null);
+      }
+    },
+    [sessionId, onGifAdded],
+  );
 
   // Popular meme search suggestions
   const suggestions = [
-    'reaction', 'funny', 'meme', 'celebration', 'thinking',
-    'mind blown', 'shocked', 'laughing', 'applause', 'crying'
+    "reaction",
+    "funny",
+    "meme",
+    "celebration",
+    "thinking",
+    "mind blown",
+    "shocked",
+    "laughing",
+    "applause",
+    "crying",
   ];
 
   return (
@@ -164,8 +187,8 @@ export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSe
                   setSearchQuery(suggestion);
                   // Trigger search
                   setTimeout(() => {
-                    const form = document.querySelector('form');
-                    form?.dispatchEvent(new Event('submit', { bubbles: true }));
+                    const form = document.querySelector("form");
+                    form?.dispatchEvent(new Event("submit", { bubbles: true }));
                   }, 0);
                 }}
                 className="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-colors"
@@ -181,12 +204,31 @@ export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSe
           {error && (
             <div className="text-center py-8">
               <p className="text-red-400 mb-2">{error}</p>
-              {error.includes('GIPHY_API_KEY') && (
+              {error.includes("GIPHY_API_KEY") && (
                 <div className="text-zinc-400 text-sm">
                   <p className="mb-2">To enable GIF search:</p>
                   <ol className="text-left inline-block">
-                    <li>1. Get a free API key at <a href="https://developers.giphy.com/" target="_blank" rel="noopener" className="text-orange-400 hover:underline">developers.giphy.com</a></li>
-                    <li>2. Add it to <code className="bg-zinc-800 px-1 rounded">.dev.vars</code>: <code className="bg-zinc-800 px-1 rounded">GIPHY_API_KEY=your_key</code></li>
+                    <li>
+                      1. Get a free API key at{" "}
+                      <a
+                        href="https://developers.giphy.com/"
+                        target="_blank"
+                        rel="noopener"
+                        className="text-orange-400 hover:underline"
+                      >
+                        developers.giphy.com
+                      </a>
+                    </li>
+                    <li>
+                      2. Add it to{" "}
+                      <code className="bg-zinc-800 px-1 rounded">
+                        .dev.vars
+                      </code>
+                      :{" "}
+                      <code className="bg-zinc-800 px-1 rounded">
+                        GIPHY_API_KEY=your_key
+                      </code>
+                    </li>
                     <li>3. Restart the FFmpeg server</li>
                   </ol>
                 </div>
@@ -202,7 +244,7 @@ export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSe
             <>
               {/* Mode indicator */}
               <div className="flex items-center gap-2 mb-4">
-                {mode === 'trending' ? (
+                {mode === "trending" ? (
                   <>
                     <TrendingUp className="w-4 h-4 text-orange-500" />
                     <span className="text-sm text-zinc-400">Trending Now</span>
@@ -236,7 +278,9 @@ export default function GifSearchPanel({ sessionId, onClose, onGifAdded }: GifSe
                       ) : (
                         <div className="flex flex-col items-center gap-1">
                           <Plus className="w-6 h-6 text-white" />
-                          <span className="text-xs text-white font-medium">Add to Assets</span>
+                          <span className="text-xs text-white font-medium">
+                            Add to Assets
+                          </span>
                         </div>
                       )}
                     </div>

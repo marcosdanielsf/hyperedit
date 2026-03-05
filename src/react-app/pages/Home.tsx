@@ -33,6 +33,7 @@ import {
   Film,
 } from "lucide-react";
 import type { TemplateId } from "@/remotion/templates";
+import { FFMPEG_URL } from "@/react-app/config";
 
 interface ChapterData {
   chapters: Array<{ start: number; title: string }>;
@@ -706,7 +707,7 @@ export default function Home() {
 
       // Call the server to process the video with FFmpeg
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/process-asset`,
+        `${FFMPEG_URL}/session/${session.sessionId}/process-asset`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -799,7 +800,7 @@ export default function Home() {
 
     // Generate chapters using the session API
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/chapters`,
+      `${FFMPEG_URL}/session/${session.sessionId}/chapters`,
       {
         method: "POST",
       },
@@ -833,7 +834,7 @@ export default function Home() {
 
     // Get current project state from server
     const projectResponse = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/project`,
+      `${FFMPEG_URL}/session/${session.sessionId}/project`,
     );
     const projectData = await projectResponse.json();
     let currentClips: TimelineClip[] = projectData.clips || [];
@@ -891,14 +892,11 @@ export default function Home() {
 
     // Save the modified clips directly to server
     if (cutsApplied > 0) {
-      await fetch(
-        `http://localhost:3333/session/${session.sessionId}/project`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...projectData, clips: currentClips }),
-        },
-      );
+      await fetch(`${FFMPEG_URL}/session/${session.sessionId}/project`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...projectData, clips: currentClips }),
+      });
 
       // Reload to sync local state
       await loadProject();
@@ -925,7 +923,7 @@ export default function Home() {
 
     // Call the transcribe-and-extract endpoint
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/transcribe-and-extract`,
+      `${FFMPEG_URL}/session/${session.sessionId}/transcribe-and-extract`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -966,7 +964,7 @@ export default function Home() {
 
     // Call the generate-broll endpoint
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/generate-broll`,
+      `${FFMPEG_URL}/session/${session.sessionId}/generate-broll`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1023,13 +1021,13 @@ export default function Home() {
 
     // Save clips directly to server
     const projectResponse = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/project`,
+      `${FFMPEG_URL}/session/${session.sessionId}/project`,
     );
     const projectData = await projectResponse.json();
 
     const updatedClips = [...(projectData.clips || []), ...newClips];
 
-    await fetch(`http://localhost:3333/session/${session.sessionId}/project`, {
+    await fetch(`${FFMPEG_URL}/session/${session.sessionId}/project`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1065,7 +1063,7 @@ export default function Home() {
 
     // Call the remove-dead-air endpoint
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/remove-dead-air`,
+      `${FFMPEG_URL}/session/${session.sessionId}/remove-dead-air`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1123,7 +1121,7 @@ export default function Home() {
 
       // Call the transcribe endpoint
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/transcribe`,
+        `${FFMPEG_URL}/session/${session.sessionId}/transcribe`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1251,7 +1249,7 @@ export default function Home() {
       try {
         // Call the server to render the motion graphic
         const response = await fetch(
-          `http://localhost:3333/session/${session.sessionId}/render-motion-graphic`,
+          `${FFMPEG_URL}/session/${session.sessionId}/render-motion-graphic`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1343,7 +1341,7 @@ export default function Home() {
 
         // Call the server to generate AI animation with video context
         const response = await fetch(
-          `http://localhost:3333/session/${session.sessionId}/generate-animation`,
+          `${FFMPEG_URL}/session/${session.sessionId}/generate-animation`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1460,7 +1458,7 @@ export default function Home() {
       );
 
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/analyze-for-animation`,
+        `${FFMPEG_URL}/session/${session.sessionId}/analyze-for-animation`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1506,7 +1504,7 @@ export default function Home() {
       }
 
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/render-from-concept`,
+        `${FFMPEG_URL}/session/${session.sessionId}/render-from-concept`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1585,7 +1583,7 @@ export default function Home() {
     }
 
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/generate-transcript-animation`,
+      `${FFMPEG_URL}/session/${session.sessionId}/generate-transcript-animation`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1628,7 +1626,7 @@ export default function Home() {
       }
 
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/generate-batch-animations`,
+        `${FFMPEG_URL}/session/${session.sessionId}/generate-batch-animations`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1693,7 +1691,7 @@ export default function Home() {
     }
 
     const response = await fetch(
-      `http://localhost:3333/session/${session.sessionId}/extract-audio`,
+      `${FFMPEG_URL}/session/${session.sessionId}/extract-audio`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1754,7 +1752,7 @@ export default function Home() {
         // 3. Generate Remotion code based on the content
         // 4. Render the animation
         const response = await fetch(
-          `http://localhost:3333/session/${session.sessionId}/generate-contextual-animation`,
+          `${FFMPEG_URL}/session/${session.sessionId}/generate-contextual-animation`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1853,7 +1851,7 @@ export default function Home() {
         }));
 
       const response = await fetch(
-        `http://localhost:3333/session/${session.sessionId}/edit-animation`,
+        `${FFMPEG_URL}/session/${session.sessionId}/edit-animation`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,8 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
-import { Palette, Send, Loader2, Sparkles, X, Zap, Image, Square, RectangleVertical } from 'lucide-react';
+import { useState, useRef, useEffect } from "react";
+import {
+  Palette,
+  Send,
+  Loader2,
+  Sparkles,
+  X,
+  Zap,
+  Image,
+  Square,
+  RectangleVertical,
+} from "lucide-react";
+import { FFMPEG_URL } from "../config";
 
 interface ChatMessage {
-  type: 'user' | 'assistant';
+  type: "user" | "assistant";
   text: string;
   images?: Array<{
     id: string;
@@ -25,10 +36,10 @@ interface PicassoPanelProps {
 }
 
 const QUICK_ACTIONS = [
-  { icon: Image, text: 'Generate a landscape background' },
-  { icon: Square, text: 'Create a square thumbnail' },
-  { icon: RectangleVertical, text: 'Design a vertical poster' },
-  { icon: Sparkles, text: 'Create an abstract pattern' },
+  { icon: Image, text: "Generate a landscape background" },
+  { icon: Square, text: "Create a square thumbnail" },
+  { icon: RectangleVertical, text: "Design a vertical poster" },
+  { icon: Sparkles, text: "Create an abstract pattern" },
 ];
 
 export default function PicassoPanel({
@@ -36,29 +47,33 @@ export default function PicassoPanel({
   onImageGenerated,
   onRefreshAssets,
 }: PicassoPanelProps) {
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [aspectRatio] = useState('16:9');
+  const [aspectRatio] = useState("16:9");
   const [showQuickActions, setShowQuickActions] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Close quick actions when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (quickActionsRef.current && !quickActionsRef.current.contains(e.target as Node)) {
+      if (
+        quickActionsRef.current &&
+        !quickActionsRef.current.contains(e.target as Node)
+      ) {
         setShowQuickActions(false);
       }
     };
     if (showQuickActions) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showQuickActions]);
 
@@ -66,19 +81,38 @@ export default function PicassoPanel({
   const hasDimensionKeywords = (text: string): boolean => {
     const lower = text.toLowerCase();
     const dimensionWords = [
-      'square', 'horizontal', 'vertical', 'portrait', 'landscape',
-      'wide', 'tall', 'widescreen', 'ultrawide', '16:9', '9:16', '1:1',
-      '4:3', '3:2', '21:9', 'aspect ratio', 'dimensions'
+      "square",
+      "horizontal",
+      "vertical",
+      "portrait",
+      "landscape",
+      "wide",
+      "tall",
+      "widescreen",
+      "ultrawide",
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:2",
+      "21:9",
+      "aspect ratio",
+      "dimensions",
     ];
-    return dimensionWords.some(word => lower.includes(word));
+    return dimensionWords.some((word) => lower.includes(word));
   };
 
   // Map user choice to aspect ratio
-  const getDimensionAspectRatio = (choice: 'horizontal' | 'vertical' | 'square'): string => {
+  const getDimensionAspectRatio = (
+    choice: "horizontal" | "vertical" | "square",
+  ): string => {
     switch (choice) {
-      case 'horizontal': return '16:9';
-      case 'vertical': return '9:16';
-      case 'square': return '1:1';
+      case "horizontal":
+        return "16:9";
+      case "vertical":
+        return "9:16";
+      case "square":
+        return "1:1";
     }
   };
 
@@ -87,27 +121,30 @@ export default function PicassoPanel({
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`http://localhost:3333/session/${sessionId}/generate-image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: imagePrompt,
-          aspectRatio: ratio,
-          resolution: '1K',
-          numImages: 1,
-        }),
-      });
+      const response = await fetch(
+        `${FFMPEG_URL}/session/${sessionId}/generate-image`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: imagePrompt,
+            aspectRatio: ratio,
+            resolution: "1K",
+            numImages: 1,
+          }),
+        },
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate image');
+        throw new Error(data.error || "Failed to generate image");
       }
 
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
-          type: 'assistant',
+          type: "assistant",
           text: `Here's your generated image! It's been added to your asset library.`,
           images: data.images,
         },
@@ -121,12 +158,12 @@ export default function PicassoPanel({
         onImageGenerated?.(data.images[0].id);
       }
     } catch (error) {
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
-          type: 'assistant',
-          text: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          type: "assistant",
+          text: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          error: error instanceof Error ? error.message : "Unknown error",
         },
       ]);
     } finally {
@@ -135,19 +172,29 @@ export default function PicassoPanel({
   };
 
   // Handle dimension selection from buttons
-  const handleDimensionSelect = (choice: 'horizontal' | 'vertical' | 'square') => {
+  const handleDimensionSelect = (
+    choice: "horizontal" | "vertical" | "square",
+  ) => {
     // Find the pending prompt from the last awaiting message
-    const lastAwaitingMessage = [...messages].reverse().find(m => m.awaitingDimension);
+    const lastAwaitingMessage = [...messages]
+      .reverse()
+      .find((m) => m.awaitingDimension);
     if (!lastAwaitingMessage?.pendingPrompt) return;
 
     const ratio = getDimensionAspectRatio(choice);
 
     // Update the awaiting message to show selection
-    setMessages(prev => prev.map(m =>
-      m.awaitingDimension
-        ? { ...m, awaitingDimension: false, text: `Got it! Creating a ${choice} image...` }
-        : m
-    ));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.awaitingDimension
+          ? {
+              ...m,
+              awaitingDimension: false,
+              text: `Got it! Creating a ${choice} image...`,
+            }
+          : m,
+      ),
+    );
 
     // Generate with selected ratio
     generateImage(lastAwaitingMessage.pendingPrompt, ratio);
@@ -158,17 +205,17 @@ export default function PicassoPanel({
     if (!prompt.trim() || isGenerating || !sessionId) return;
 
     const userMessage = prompt.trim();
-    setPrompt('');
-    setMessages(prev => [...prev, { type: 'user', text: userMessage }]);
+    setPrompt("");
+    setMessages((prev) => [...prev, { type: "user", text: userMessage }]);
 
     // Check if user specified dimensions
     if (!hasDimensionKeywords(userMessage)) {
       // Ask for dimensions
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
-          type: 'assistant',
-          text: 'What dimensions would you like?',
+          type: "assistant",
+          text: "What dimensions would you like?",
           awaitingDimension: true,
           pendingPrompt: userMessage,
         },
@@ -179,14 +226,24 @@ export default function PicassoPanel({
     // Determine aspect ratio from keywords
     const lower = userMessage.toLowerCase();
     let detectedRatio = aspectRatio;
-    if (lower.includes('square') || lower.includes('1:1')) {
-      detectedRatio = '1:1';
-    } else if (lower.includes('vertical') || lower.includes('portrait') || lower.includes('tall') || lower.includes('9:16')) {
-      detectedRatio = '9:16';
-    } else if (lower.includes('horizontal') || lower.includes('landscape') || lower.includes('wide') || lower.includes('16:9')) {
-      detectedRatio = '16:9';
-    } else if (lower.includes('ultrawide') || lower.includes('21:9')) {
-      detectedRatio = '21:9';
+    if (lower.includes("square") || lower.includes("1:1")) {
+      detectedRatio = "1:1";
+    } else if (
+      lower.includes("vertical") ||
+      lower.includes("portrait") ||
+      lower.includes("tall") ||
+      lower.includes("9:16")
+    ) {
+      detectedRatio = "9:16";
+    } else if (
+      lower.includes("horizontal") ||
+      lower.includes("landscape") ||
+      lower.includes("wide") ||
+      lower.includes("16:9")
+    ) {
+      detectedRatio = "16:9";
+    } else if (lower.includes("ultrawide") || lower.includes("21:9")) {
+      detectedRatio = "21:9";
     }
 
     // Generate directly
@@ -228,12 +285,12 @@ export default function PicassoPanel({
           <div className="text-center text-sm text-zinc-500 py-8">
             {sessionId
               ? "No images yet. Use Quick Actions below to get started!"
-              : 'Upload a video first to start generating images'}
+              : "Upload a video first to start generating images"}
           </div>
         ) : (
           messages.map((message, idx) => (
             <div key={idx} className="space-y-2">
-              {message.type === 'user' ? (
+              {message.type === "user" ? (
                 <div className="flex justify-end">
                   <div className="bg-gradient-to-r from-orange-400 to-amber-300 rounded-lg px-3 py-2 max-w-[85%]">
                     <p className="text-sm text-white">{message.text}</p>
@@ -241,30 +298,40 @@ export default function PicassoPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className={`bg-zinc-800 rounded-lg p-3 space-y-2 ${message.error ? 'border border-red-500/30' : ''}`}>
-                    <p className={`text-sm whitespace-pre-wrap ${message.error ? 'text-red-200' : 'text-zinc-200'}`}>{message.text}</p>
+                  <div
+                    className={`bg-zinc-800 rounded-lg p-3 space-y-2 ${message.error ? "border border-red-500/30" : ""}`}
+                  >
+                    <p
+                      className={`text-sm whitespace-pre-wrap ${message.error ? "text-red-200" : "text-zinc-200"}`}
+                    >
+                      {message.text}
+                    </p>
 
                     {/* Dimension Selection Buttons */}
                     {message.awaitingDimension && (
                       <div className="flex gap-2 mt-3">
                         <button
-                          onClick={() => handleDimensionSelect('horizontal')}
+                          onClick={() => handleDimensionSelect("horizontal")}
                           disabled={isGenerating}
                           className="flex-1 flex flex-col items-center gap-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
                         >
                           <div className="w-8 h-5 border-2 border-orange-300 rounded" />
-                          <span className="text-xs text-zinc-300">Horizontal</span>
+                          <span className="text-xs text-zinc-300">
+                            Horizontal
+                          </span>
                         </button>
                         <button
-                          onClick={() => handleDimensionSelect('vertical')}
+                          onClick={() => handleDimensionSelect("vertical")}
                           disabled={isGenerating}
                           className="flex-1 flex flex-col items-center gap-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
                         >
                           <div className="w-5 h-8 border-2 border-orange-300 rounded" />
-                          <span className="text-xs text-zinc-300">Vertical</span>
+                          <span className="text-xs text-zinc-300">
+                            Vertical
+                          </span>
                         </button>
                         <button
-                          onClick={() => handleDimensionSelect('square')}
+                          onClick={() => handleDimensionSelect("square")}
                           disabled={isGenerating}
                           className="flex-1 flex flex-col items-center gap-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
                         >
@@ -283,13 +350,15 @@ export default function PicassoPanel({
                             className="relative rounded-lg overflow-hidden bg-zinc-900"
                           >
                             <img
-                              src={`http://localhost:3333${image.streamUrl}`}
+                              src={`${FFMPEG_URL}${image.streamUrl}`}
                               alt={image.filename}
                               className="w-full h-auto"
                               loading="lazy"
                             />
                             <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-black/50 backdrop-blur-sm">
-                              <p className="text-xs text-zinc-300 truncate">{image.filename}</p>
+                              <p className="text-xs text-zinc-300 truncate">
+                                {image.filename}
+                              </p>
                               <p className="text-xs text-zinc-500">
                                 {image.width} x {image.height}
                               </p>
@@ -317,8 +386,8 @@ export default function PicassoPanel({
             disabled={!sessionId || isGenerating}
             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
               showQuickActions
-                ? 'bg-orange-400/20 text-orange-300 ring-1 ring-orange-400/50'
-                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed'
+                ? "bg-orange-400/20 text-orange-300 ring-1 ring-orange-400/50"
+                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
             }`}
           >
             <Zap className="w-4 h-4" />
@@ -341,7 +410,9 @@ export default function PicassoPanel({
                     className="flex items-center gap-2 px-3 py-2.5 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg text-xs text-left transition-colors group"
                   >
                     <action.icon className="w-4 h-4 text-zinc-400 group-hover:text-orange-300 transition-colors flex-shrink-0" />
-                    <span className="text-zinc-300 leading-tight">{action.text}</span>
+                    <span className="text-zinc-300 leading-tight">
+                      {action.text}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -355,12 +426,14 @@ export default function PicassoPanel({
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder={sessionId ? "Describe your image..." : "Upload a video first..."}
+            placeholder={
+              sessionId ? "Describe your image..." : "Upload a video first..."
+            }
             className="w-full px-3 pt-3 pb-2 bg-transparent text-sm resize-none focus:outline-none placeholder:text-zinc-500"
             rows={2}
             disabled={isGenerating || !sessionId}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e);
               }

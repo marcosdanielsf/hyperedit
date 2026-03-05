@@ -9,6 +9,10 @@ export default defineConfig({
   plugins: [...mochaPlugins(process.env as any), react(), cloudflare()],
   server: {
     allowedHosts: true,
+    headers: {
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors 'self' http://localhost:*",
+    },
   },
   build: {
     chunkSizeWarningLimit: 5000,

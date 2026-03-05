@@ -1,18 +1,31 @@
-import { useState, useRef, useEffect } from 'react';
-import { Film, Send, Loader2, Video, X, Zap, Plus, Play, Wand2, Eraser, Image as ImageIcon } from 'lucide-react';
+import { useState, useRef, useEffect } from "react";
+import {
+  Film,
+  Send,
+  Loader2,
+  Video,
+  X,
+  Zap,
+  Plus,
+  Play,
+  Wand2,
+  Eraser,
+  Image as ImageIcon,
+} from "lucide-react";
+import { FFMPEG_URL } from "../config";
 
-type DiCaprioSkill = 'animate' | 'restyle' | 'remove-bg';
+type DiCaprioSkill = "animate" | "restyle" | "remove-bg";
 
 interface AttachedAsset {
   id: string;
   filename: string;
-  type: 'image' | 'video' | 'audio';
+  type: "image" | "video" | "audio";
   thumbnailUrl?: string | null;
   duration?: number;
 }
 
 interface ChatMessage {
-  type: 'user' | 'assistant';
+  type: "user" | "assistant";
   text: string;
   video?: {
     id: string;
@@ -44,16 +57,34 @@ interface DiCaprioPanelProps {
 }
 
 const SKILLS = [
-  { id: 'animate' as DiCaprioSkill, label: 'Animate', icon: Play, description: 'Image → Video', requiresType: 'image' },
-  { id: 'restyle' as DiCaprioSkill, label: 'Restyle', icon: Wand2, description: 'Transform style', requiresType: 'video' },
-  { id: 'remove-bg' as DiCaprioSkill, label: 'Remove BG', icon: Eraser, description: 'Remove background', requiresType: 'video' },
+  {
+    id: "animate" as DiCaprioSkill,
+    label: "Animate",
+    icon: Play,
+    description: "Image → Video",
+    requiresType: "image",
+  },
+  {
+    id: "restyle" as DiCaprioSkill,
+    label: "Restyle",
+    icon: Wand2,
+    description: "Transform style",
+    requiresType: "video",
+  },
+  {
+    id: "remove-bg" as DiCaprioSkill,
+    label: "Remove BG",
+    icon: Eraser,
+    description: "Remove background",
+    requiresType: "video",
+  },
 ];
 
 const QUICK_ACTIONS = [
-  { icon: Play, text: 'Animate with slow zoom' },
-  { icon: Wand2, text: 'Apply cinematic film style' },
-  { icon: Eraser, text: 'Remove video background' },
-  { icon: Film, text: 'Add camera movement' },
+  { icon: Play, text: "Animate with slow zoom" },
+  { icon: Wand2, text: "Apply cinematic film style" },
+  { icon: Eraser, text: "Remove video background" },
+  { icon: Film, text: "Add camera movement" },
 ];
 
 export default function DiCaprioPanel({
@@ -62,13 +93,15 @@ export default function DiCaprioPanel({
   onVideoGenerated,
   onRefreshAssets,
 }: DiCaprioPanelProps) {
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [duration] = useState('5');
+  const [duration] = useState("5");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
-  const [attachedAsset, setAttachedAsset] = useState<AttachedAsset | null>(null);
+  const [attachedAsset, setAttachedAsset] = useState<AttachedAsset | null>(
+    null,
+  );
   const [activeSkill, setActiveSkill] = useState<DiCaprioSkill | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,45 +109,52 @@ export default function DiCaprioPanel({
   const assetPickerRef = useRef<HTMLDivElement>(null);
 
   // Get available assets by type
-  const imageAssets = assets.filter(a => a.type === 'image');
-  const videoAssets = assets.filter(a => a.type === 'video');
+  const imageAssets = assets.filter((a) => a.type === "image");
+  const videoAssets = assets.filter((a) => a.type === "video");
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Close popups when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (quickActionsRef.current && !quickActionsRef.current.contains(e.target as Node)) {
+      if (
+        quickActionsRef.current &&
+        !quickActionsRef.current.contains(e.target as Node)
+      ) {
         setShowQuickActions(false);
       }
-      if (assetPickerRef.current && !assetPickerRef.current.contains(e.target as Node)) {
+      if (
+        assetPickerRef.current &&
+        !assetPickerRef.current.contains(e.target as Node)
+      ) {
         setShowAssetPicker(false);
       }
     };
     if (showQuickActions || showAssetPicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showQuickActions, showAssetPicker]);
 
   // Attach an asset
-  const attachAsset = (asset: typeof assets[0]) => {
+  const attachAsset = (asset: (typeof assets)[0]) => {
     setAttachedAsset({
       id: asset.id,
       filename: asset.filename,
-      type: asset.type as 'image' | 'video' | 'audio',
+      type: asset.type as "image" | "video" | "audio",
       thumbnailUrl: asset.thumbnailUrl,
       duration: asset.duration,
     });
     setShowAssetPicker(false);
 
     // Auto-select appropriate skill based on asset type
-    if (asset.type === 'image' && !activeSkill) {
-      setActiveSkill('animate');
-    } else if (asset.type === 'video' && !activeSkill) {
-      setActiveSkill('restyle');
+    if (asset.type === "image" && !activeSkill) {
+      setActiveSkill("animate");
+    } else if (asset.type === "video" && !activeSkill) {
+      setActiveSkill("restyle");
     }
   };
 
@@ -125,40 +165,63 @@ export default function DiCaprioPanel({
   };
 
   // Get friendly asset name
-  const getFriendlyName = (asset: typeof assets[0]) => {
+  const getFriendlyName = (asset: (typeof assets)[0]) => {
     const displayName = asset.aiGenerated
-      ? asset.filename.replace(/^(picasso|dicaprio)-/, '').replace(/\.[^/.]+$/, '').replace(/-/g, ' ')
-      : asset.filename.replace(/\.[^/.]+$/, '');
+      ? asset.filename
+          .replace(/^(picasso|dicaprio)-/, "")
+          .replace(/\.[^/.]+$/, "")
+          .replace(/-/g, " ")
+      : asset.filename.replace(/\.[^/.]+$/, "");
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}/.test(displayName);
     return isUUID
-      ? `${asset.aiGenerated ? 'AI ' : ''}${asset.type.charAt(0).toUpperCase() + asset.type.slice(1)}`
-      : displayName.length > 20 ? displayName.substring(0, 20) + '...' : displayName;
+      ? `${asset.aiGenerated ? "AI " : ""}${asset.type.charAt(0).toUpperCase() + asset.type.slice(1)}`
+      : displayName.length > 20
+        ? displayName.substring(0, 20) + "..."
+        : displayName;
   };
 
   // Detect skill from user message
   const detectSkill = (text: string): DiCaprioSkill | null => {
     const lower = text.toLowerCase();
 
-    if (lower.includes('remove background') || lower.includes('remove bg') ||
-        lower.includes('green screen') || lower.includes('isolate') ||
-        lower.includes('cut out') || lower.includes('background removal')) {
-      return 'remove-bg';
+    if (
+      lower.includes("remove background") ||
+      lower.includes("remove bg") ||
+      lower.includes("green screen") ||
+      lower.includes("isolate") ||
+      lower.includes("cut out") ||
+      lower.includes("background removal")
+    ) {
+      return "remove-bg";
     }
 
-    if (lower.includes('restyle') || lower.includes('style transfer') ||
-        lower.includes('make it') || lower.includes('turn into') ||
-        lower.includes('convert to') || lower.includes('anime') ||
-        lower.includes('cartoon') || lower.includes('film grain') ||
-        lower.includes('black and white') || lower.includes('vintage') ||
-        lower.includes('cinematic') || lower.includes('transform')) {
-      return 'restyle';
+    if (
+      lower.includes("restyle") ||
+      lower.includes("style transfer") ||
+      lower.includes("make it") ||
+      lower.includes("turn into") ||
+      lower.includes("convert to") ||
+      lower.includes("anime") ||
+      lower.includes("cartoon") ||
+      lower.includes("film grain") ||
+      lower.includes("black and white") ||
+      lower.includes("vintage") ||
+      lower.includes("cinematic") ||
+      lower.includes("transform")
+    ) {
+      return "restyle";
     }
 
-    if (lower.includes('animate') || lower.includes('bring to life') ||
-        lower.includes('add motion') || lower.includes('make it move') ||
-        lower.includes('zoom') || lower.includes('pan') ||
-        lower.includes('camera movement')) {
-      return 'animate';
+    if (
+      lower.includes("animate") ||
+      lower.includes("bring to life") ||
+      lower.includes("add motion") ||
+      lower.includes("make it move") ||
+      lower.includes("zoom") ||
+      lower.includes("pan") ||
+      lower.includes("camera movement")
+    ) {
+      return "animate";
     }
 
     return null;
@@ -169,33 +232,43 @@ export default function DiCaprioPanel({
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`http://localhost:3333/session/${sessionId}/generate-video`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: videoPrompt,
-          imageAssetId: imageId,
-          duration: parseInt(duration),
-        }),
-      });
+      const response = await fetch(
+        `${FFMPEG_URL}/session/${sessionId}/generate-video`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: videoPrompt,
+            imageAssetId: imageId,
+            duration: parseInt(duration),
+          }),
+        },
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to generate video');
+      if (!response.ok)
+        throw new Error(data.error || "Failed to generate video");
 
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Your animated video is ready!`,
-        video: data.video,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Your animated video is ready!`,
+          video: data.video,
+        },
+      ]);
 
       onRefreshAssets?.();
       if (data.video?.id) onVideoGenerated?.(data.video.id);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      ]);
     } finally {
       setIsGenerating(false);
       clearAttachment();
@@ -207,32 +280,42 @@ export default function DiCaprioPanel({
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`http://localhost:3333/session/${sessionId}/restyle-video`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: stylePrompt,
-          videoAssetId: videoId,
-        }),
-      });
+      const response = await fetch(
+        `${FFMPEG_URL}/session/${sessionId}/restyle-video`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: stylePrompt,
+            videoAssetId: videoId,
+          }),
+        },
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to restyle video');
+      if (!response.ok)
+        throw new Error(data.error || "Failed to restyle video");
 
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Your restyled video is ready!`,
-        video: data.video,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Your restyled video is ready!`,
+          video: data.video,
+        },
+      ]);
 
       onRefreshAssets?.();
       if (data.video?.id) onVideoGenerated?.(data.video.id);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      ]);
     } finally {
       setIsGenerating(false);
       clearAttachment();
@@ -244,31 +327,41 @@ export default function DiCaprioPanel({
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`http://localhost:3333/session/${sessionId}/remove-video-bg`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoAssetId: videoId,
-        }),
-      });
+      const response = await fetch(
+        `${FFMPEG_URL}/session/${sessionId}/remove-video-bg`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoAssetId: videoId,
+          }),
+        },
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to remove background');
+      if (!response.ok)
+        throw new Error(data.error || "Failed to remove background");
 
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Background removed! Your video now has a transparent background.`,
-        video: data.video,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Background removed! Your video now has a transparent background.`,
+          video: data.video,
+        },
+      ]);
 
       onRefreshAssets?.();
       if (data.video?.id) onVideoGenerated?.(data.video.id);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      ]);
     } finally {
       setIsGenerating(false);
       clearAttachment();
@@ -276,21 +369,32 @@ export default function DiCaprioPanel({
   };
 
   // Handle asset selection from picker in message
-  const handleAssetSelectFromMessage = (assetId: string, skill: DiCaprioSkill, prompt?: string) => {
-    const asset = assets.find(a => a.id === assetId);
+  const handleAssetSelectFromMessage = (
+    assetId: string,
+    skill: DiCaprioSkill,
+    prompt?: string,
+  ) => {
+    const asset = assets.find((a) => a.id === assetId);
     if (!asset) return;
 
-    setMessages(prev => prev.map(m =>
-      (m.awaitingImageSelection || m.awaitingVideoSelection)
-        ? { ...m, awaitingImageSelection: false, awaitingVideoSelection: false, text: `Processing "${asset.filename}"...` }
-        : m
-    ));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.awaitingImageSelection || m.awaitingVideoSelection
+          ? {
+              ...m,
+              awaitingImageSelection: false,
+              awaitingVideoSelection: false,
+              text: `Processing "${asset.filename}"...`,
+            }
+          : m,
+      ),
+    );
 
-    if (skill === 'animate') {
-      generateFromImage(prompt || 'cinematic camera movement', assetId);
-    } else if (skill === 'restyle') {
-      restyleVideo(prompt || 'cinematic film style', assetId);
-    } else if (skill === 'remove-bg') {
+    if (skill === "animate") {
+      generateFromImage(prompt || "cinematic camera movement", assetId);
+    } else if (skill === "restyle") {
+      restyleVideo(prompt || "cinematic film style", assetId);
+    } else if (skill === "remove-bg") {
       removeBackground(assetId);
     }
   };
@@ -300,16 +404,16 @@ export default function DiCaprioPanel({
     if (!prompt.trim() || isGenerating || !sessionId) return;
 
     const userMessage = prompt.trim();
-    setPrompt('');
-    setMessages(prev => [...prev, { type: 'user', text: userMessage }]);
+    setPrompt("");
+    setMessages((prev) => [...prev, { type: "user", text: userMessage }]);
 
     // If we have an attached asset, execute the appropriate action
     if (attachedAsset) {
-      if (attachedAsset.type === 'image') {
+      if (attachedAsset.type === "image") {
         await generateFromImage(userMessage, attachedAsset.id);
-      } else if (attachedAsset.type === 'video') {
+      } else if (attachedAsset.type === "video") {
         const detectedSkill = detectSkill(userMessage);
-        if (detectedSkill === 'remove-bg') {
+        if (detectedSkill === "remove-bg") {
           await removeBackground(attachedAsset.id);
         } else {
           await restyleVideo(userMessage, attachedAsset.id);
@@ -321,75 +425,96 @@ export default function DiCaprioPanel({
     // No attached asset - try to detect skill and find asset
     const detectedSkill = detectSkill(userMessage);
 
-    if (detectedSkill === 'animate') {
+    if (detectedSkill === "animate") {
       if (imageAssets.length === 0) {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: "I need an image to animate! Use the + button to attach one.",
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "I need an image to animate! Use the + button to attach one.",
+          },
+        ]);
         return;
       }
       if (imageAssets.length === 1) {
         await generateFromImage(userMessage, imageAssets[0].id);
       } else {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: 'Which image would you like to animate?',
-          awaitingImageSelection: true,
-          pendingPrompt: userMessage,
-          pendingSkill: 'animate',
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "Which image would you like to animate?",
+            awaitingImageSelection: true,
+            pendingPrompt: userMessage,
+            pendingSkill: "animate",
+          },
+        ]);
       }
-    } else if (detectedSkill === 'restyle') {
+    } else if (detectedSkill === "restyle") {
       if (videoAssets.length === 0) {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: "I need a video to restyle! Use the + button to attach one.",
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "I need a video to restyle! Use the + button to attach one.",
+          },
+        ]);
         return;
       }
       if (videoAssets.length === 1) {
         await restyleVideo(userMessage, videoAssets[0].id);
       } else {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: 'Which video would you like to restyle?',
-          awaitingVideoSelection: true,
-          pendingPrompt: userMessage,
-          pendingSkill: 'restyle',
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "Which video would you like to restyle?",
+            awaitingVideoSelection: true,
+            pendingPrompt: userMessage,
+            pendingSkill: "restyle",
+          },
+        ]);
       }
-    } else if (detectedSkill === 'remove-bg') {
+    } else if (detectedSkill === "remove-bg") {
       if (videoAssets.length === 0) {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: "I need a video to remove the background from! Use the + button to attach one.",
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "I need a video to remove the background from! Use the + button to attach one.",
+          },
+        ]);
         return;
       }
       if (videoAssets.length === 1) {
         await removeBackground(videoAssets[0].id);
       } else {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          text: 'Which video would you like to remove the background from?',
-          awaitingVideoSelection: true,
-          pendingSkill: 'remove-bg',
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            text: "Which video would you like to remove the background from?",
+            awaitingVideoSelection: true,
+            pendingSkill: "remove-bg",
+          },
+        ]);
       }
     } else {
       // Couldn't detect skill
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        text: "Use the + button to attach an image or video, then describe what you want!",
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "assistant",
+          text: "Use the + button to attach an image or video, then describe what you want!",
+        },
+      ]);
     }
   };
 
   // Get placeholder based on context
   const getPlaceholder = () => {
     if (attachedAsset) {
-      if (attachedAsset.type === 'image') {
+      if (attachedAsset.type === "image") {
         return "Describe the motion (e.g., 'slow zoom in')...";
       }
       return "Describe the style (e.g., 'anime', 'film noir')...";
@@ -432,12 +557,12 @@ export default function DiCaprioPanel({
           <div className="text-center text-sm text-zinc-500 py-8">
             {sessionId
               ? "No videos yet. Use Quick Actions below to get started!"
-              : 'Upload a video first to start'}
+              : "Upload a video first to start"}
           </div>
         ) : (
           messages.map((message, idx) => (
             <div key={idx} className="space-y-2">
-              {message.type === 'user' ? (
+              {message.type === "user" ? (
                 <div className="flex justify-end">
                   <div className="bg-gradient-to-r from-zinc-500 to-slate-500 rounded-lg px-3 py-2 max-w-[85%]">
                     <p className="text-sm text-white">{message.text}</p>
@@ -445,83 +570,113 @@ export default function DiCaprioPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className={`bg-zinc-800 rounded-lg p-3 space-y-2 ${message.error ? 'border border-red-500/30' : ''}`}>
-                    <p className={`text-sm whitespace-pre-wrap ${message.error ? 'text-red-200' : 'text-zinc-200'}`}>{message.text}</p>
+                  <div
+                    className={`bg-zinc-800 rounded-lg p-3 space-y-2 ${message.error ? "border border-red-500/30" : ""}`}
+                  >
+                    <p
+                      className={`text-sm whitespace-pre-wrap ${message.error ? "text-red-200" : "text-zinc-200"}`}
+                    >
+                      {message.text}
+                    </p>
 
                     {/* Image Selection */}
-                    {message.awaitingImageSelection && imageAssets.length > 0 && (
-                      <div className="grid grid-cols-2 gap-2 mt-3 max-h-48 overflow-y-auto">
-                        {imageAssets.map((img) => (
-                          <button
-                            key={img.id}
-                            onClick={() => handleAssetSelectFromMessage(img.id, message.pendingSkill || 'animate', message.pendingPrompt)}
-                            disabled={isGenerating}
-                            className="flex flex-col items-center gap-1 p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
-                          >
-                            {img.thumbnailUrl ? (
-                              <img
-                                src={img.thumbnailUrl}
-                                alt={img.filename}
-                                className="w-full aspect-video object-cover rounded"
-                              />
-                            ) : (
-                              <div className="w-full aspect-video bg-zinc-800 rounded flex items-center justify-center">
-                                <ImageIcon className="w-6 h-6 text-zinc-600" />
-                              </div>
-                            )}
-                            <span className="text-xs text-zinc-300 truncate w-full text-center">
-                              {getFriendlyName(img)}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {message.awaitingImageSelection &&
+                      imageAssets.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 mt-3 max-h-48 overflow-y-auto">
+                          {imageAssets.map((img) => (
+                            <button
+                              key={img.id}
+                              onClick={() =>
+                                handleAssetSelectFromMessage(
+                                  img.id,
+                                  message.pendingSkill || "animate",
+                                  message.pendingPrompt,
+                                )
+                              }
+                              disabled={isGenerating}
+                              className="flex flex-col items-center gap-1 p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
+                            >
+                              {img.thumbnailUrl ? (
+                                <img
+                                  src={img.thumbnailUrl}
+                                  alt={img.filename}
+                                  className="w-full aspect-video object-cover rounded"
+                                />
+                              ) : (
+                                <div className="w-full aspect-video bg-zinc-800 rounded flex items-center justify-center">
+                                  <ImageIcon className="w-6 h-6 text-zinc-600" />
+                                </div>
+                              )}
+                              <span className="text-xs text-zinc-300 truncate w-full text-center">
+                                {getFriendlyName(img)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                     {/* Video Selection */}
-                    {message.awaitingVideoSelection && videoAssets.length > 0 && (
-                      <div className="grid grid-cols-2 gap-2 mt-3 max-h-48 overflow-y-auto">
-                        {videoAssets.map((vid) => (
-                          <button
-                            key={vid.id}
-                            onClick={() => handleAssetSelectFromMessage(vid.id, message.pendingSkill || 'restyle', message.pendingPrompt)}
-                            disabled={isGenerating}
-                            className="flex flex-col items-center gap-1 p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
-                          >
-                            {vid.thumbnailUrl ? (
-                              <img
-                                src={vid.thumbnailUrl}
-                                alt={vid.filename}
-                                className="w-full aspect-video object-cover rounded"
-                              />
-                            ) : (
-                              <div className="w-full aspect-video bg-zinc-800 rounded flex items-center justify-center">
-                                <Video className="w-6 h-6 text-zinc-600" />
-                              </div>
-                            )}
-                            <span className="text-xs text-zinc-300 truncate w-full text-center">
-                              {getFriendlyName(vid)}
-                            </span>
-                            {vid.duration && (
-                              <span className="text-[10px] text-zinc-500">{vid.duration.toFixed(1)}s</span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {message.awaitingVideoSelection &&
+                      videoAssets.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 mt-3 max-h-48 overflow-y-auto">
+                          {videoAssets.map((vid) => (
+                            <button
+                              key={vid.id}
+                              onClick={() =>
+                                handleAssetSelectFromMessage(
+                                  vid.id,
+                                  message.pendingSkill || "restyle",
+                                  message.pendingPrompt,
+                                )
+                              }
+                              disabled={isGenerating}
+                              className="flex flex-col items-center gap-1 p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
+                            >
+                              {vid.thumbnailUrl ? (
+                                <img
+                                  src={vid.thumbnailUrl}
+                                  alt={vid.filename}
+                                  className="w-full aspect-video object-cover rounded"
+                                />
+                              ) : (
+                                <div className="w-full aspect-video bg-zinc-800 rounded flex items-center justify-center">
+                                  <Video className="w-6 h-6 text-zinc-600" />
+                                </div>
+                              )}
+                              <span className="text-xs text-zinc-300 truncate w-full text-center">
+                                {getFriendlyName(vid)}
+                              </span>
+                              {vid.duration && (
+                                <span className="text-[10px] text-zinc-500">
+                                  {vid.duration.toFixed(1)}s
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                     {/* Generated Video */}
                     {message.video && (
                       <div className="mt-3">
                         <div className="relative rounded-lg overflow-hidden bg-zinc-900">
                           <video
-                            src={`http://localhost:3333${message.video.streamUrl}`}
+                            src={`${FFMPEG_URL}${message.video.streamUrl}`}
                             controls
                             className="w-full h-auto"
-                            poster={message.video.thumbnailUrl ? `http://localhost:3333${message.video.thumbnailUrl}` : undefined}
+                            poster={
+                              message.video.thumbnailUrl
+                                ? `${FFMPEG_URL}${message.video.thumbnailUrl}`
+                                : undefined
+                            }
                           />
                           <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-black/50 backdrop-blur-sm pointer-events-none">
-                            <p className="text-xs text-zinc-300 truncate">{message.video.filename}</p>
-                            <p className="text-xs text-zinc-500">{message.video.duration?.toFixed(1)}s</p>
+                            <p className="text-xs text-zinc-300 truncate">
+                              {message.video.filename}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              {message.video.duration?.toFixed(1)}s
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -542,10 +697,13 @@ export default function DiCaprioPanel({
           {SKILLS.map((skill) => {
             const Icon = skill.icon;
             const isActive = activeSkill === skill.id;
-            const isDisabled = !!(attachedAsset && (
-              (skill.requiresType === 'image' && attachedAsset.type !== 'image') ||
-              (skill.requiresType === 'video' && attachedAsset.type !== 'video')
-            ));
+            const isDisabled = !!(
+              attachedAsset &&
+              ((skill.requiresType === "image" &&
+                attachedAsset.type !== "image") ||
+                (skill.requiresType === "video" &&
+                  attachedAsset.type !== "video"))
+            );
             return (
               <button
                 key={skill.id}
@@ -557,10 +715,10 @@ export default function DiCaprioPanel({
                 disabled={isGenerating || isDisabled}
                 className={`flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all ${
                   isActive
-                    ? 'bg-zinc-500 text-white'
+                    ? "bg-zinc-500 text-white"
                     : isDisabled
-                    ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
-                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                      ? "bg-zinc-800/50 text-zinc-600 cursor-not-allowed"
+                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
                 } disabled:opacity-50`}
                 title={skill.description}
               >
@@ -579,8 +737,8 @@ export default function DiCaprioPanel({
             disabled={!sessionId || isGenerating}
             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
               showQuickActions
-                ? 'bg-zinc-500/20 text-zinc-300 ring-1 ring-zinc-400/50'
-                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed'
+                ? "bg-zinc-500/20 text-zinc-300 ring-1 ring-zinc-400/50"
+                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
             }`}
           >
             <Zap className="w-4 h-4" />
@@ -603,7 +761,9 @@ export default function DiCaprioPanel({
                     className="flex items-center gap-2 px-3 py-2.5 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg text-xs text-left transition-colors group"
                   >
                     <action.icon className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors flex-shrink-0" />
-                    <span className="text-zinc-300 leading-tight">{action.text}</span>
+                    <span className="text-zinc-300 leading-tight">
+                      {action.text}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -615,8 +775,14 @@ export default function DiCaprioPanel({
         {attachedAsset && (
           <div className="flex flex-wrap gap-1.5 mb-2">
             <div className="flex items-center gap-1 px-2 py-1 bg-zinc-500/20 text-zinc-300 rounded-md text-xs">
-              {attachedAsset.type === 'image' ? <ImageIcon className="w-3 h-3" /> : <Video className="w-3 h-3" />}
-              <span className="truncate max-w-[150px]">{attachedAsset.filename}</span>
+              {attachedAsset.type === "image" ? (
+                <ImageIcon className="w-3 h-3" />
+              ) : (
+                <Video className="w-3 h-3" />
+              )}
+              <span className="truncate max-w-[150px]">
+                {attachedAsset.filename}
+              </span>
               <button
                 type="button"
                 onClick={clearAttachment}
@@ -634,12 +800,14 @@ export default function DiCaprioPanel({
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder={sessionId ? getPlaceholder() : "Upload a video first..."}
+            placeholder={
+              sessionId ? getPlaceholder() : "Upload a video first..."
+            }
             className="w-full px-3 pt-3 pb-2 bg-transparent text-sm resize-none focus:outline-none placeholder:text-zinc-500"
             rows={2}
             disabled={isGenerating || !sessionId}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e);
               }
@@ -657,8 +825,8 @@ export default function DiCaprioPanel({
                   disabled={isGenerating || !sessionId}
                   className={`p-1.5 rounded-md transition-all ${
                     showAssetPicker || attachedAsset
-                      ? 'bg-zinc-500/20 text-zinc-300'
-                      : 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-300 disabled:opacity-50'
+                      ? "bg-zinc-500/20 text-zinc-300"
+                      : "hover:bg-zinc-700 text-zinc-400 hover:text-zinc-300 disabled:opacity-50"
                   }`}
                   title="Attach asset"
                 >
@@ -668,51 +836,67 @@ export default function DiCaprioPanel({
                 {/* Asset Picker Popover */}
                 {showAssetPicker && (
                   <div className="absolute bottom-full left-0 mb-2 w-72 p-2 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="text-xs font-medium text-zinc-400 px-2 py-1 mb-1">Select Asset</div>
+                    <div className="text-xs font-medium text-zinc-400 px-2 py-1 mb-1">
+                      Select Asset
+                    </div>
                     <div className="max-h-64 overflow-y-auto space-y-1">
                       {assets.length === 0 ? (
                         <div className="px-2 py-4 text-center text-xs text-zinc-500">
                           No assets in library
                         </div>
                       ) : (
-                        assets.filter(a => a.type === 'image' || a.type === 'video').map(asset => (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            onClick={() => attachAsset(asset)}
-                            className="w-full flex items-center gap-3 px-2 py-2 hover:bg-zinc-700 rounded-lg text-left transition-colors group"
-                          >
-                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-700 flex-shrink-0 flex items-center justify-center">
-                              {asset.thumbnailUrl ? (
-                                <img
-                                  src={asset.thumbnailUrl}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : asset.type === 'image' ? (
-                                <ImageIcon className="w-5 h-5 text-zinc-500" />
-                              ) : (
-                                <Video className="w-5 h-5 text-zinc-500" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm text-zinc-200 truncate font-medium">{getFriendlyName(asset)}</div>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                  asset.type === 'video' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
-                                }`}>
-                                  {asset.type}
-                                </span>
-                                {asset.aiGenerated && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-500/20 text-zinc-300">AI</span>
-                                )}
-                                {asset.duration && (
-                                  <span className="text-[10px] text-zinc-500">{asset.duration.toFixed(1)}s</span>
+                        assets
+                          .filter(
+                            (a) => a.type === "image" || a.type === "video",
+                          )
+                          .map((asset) => (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              onClick={() => attachAsset(asset)}
+                              className="w-full flex items-center gap-3 px-2 py-2 hover:bg-zinc-700 rounded-lg text-left transition-colors group"
+                            >
+                              <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-700 flex-shrink-0 flex items-center justify-center">
+                                {asset.thumbnailUrl ? (
+                                  <img
+                                    src={asset.thumbnailUrl}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : asset.type === "image" ? (
+                                  <ImageIcon className="w-5 h-5 text-zinc-500" />
+                                ) : (
+                                  <Video className="w-5 h-5 text-zinc-500" />
                                 )}
                               </div>
-                            </div>
-                          </button>
-                        ))
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm text-zinc-200 truncate font-medium">
+                                  {getFriendlyName(asset)}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                      asset.type === "video"
+                                        ? "bg-blue-500/20 text-blue-300"
+                                        : "bg-purple-500/20 text-purple-300"
+                                    }`}
+                                  >
+                                    {asset.type}
+                                  </span>
+                                  {asset.aiGenerated && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-500/20 text-zinc-300">
+                                      AI
+                                    </span>
+                                  )}
+                                  {asset.duration && (
+                                    <span className="text-[10px] text-zinc-500">
+                                      {asset.duration.toFixed(1)}s
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          ))
                       )}
                     </div>
                   </div>
